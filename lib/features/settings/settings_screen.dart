@@ -17,6 +17,7 @@ import '../models/models_repository.dart';
 import '../orgs/orgs_repository.dart';
 import '../usage/usage_repository.dart';
 import '../usage/usage_widgets.dart';
+import '../voice/voice_repository.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -199,6 +200,10 @@ class SettingsScreen extends ConsumerWidget {
     final org = ref.watch(activeOrgProvider).valueOrNull;
     final memoryEnabled = user.value?.memoryEnabled ?? true;
     final isServerAdmin = user.value?.isServerAdmin ?? false;
+    final voice = ref.watch(voiceCapabilitiesProvider).valueOrNull;
+    // A voice that is no longer offered falls back to the server default.
+    final voiceIds = {for (final v in voice?.voices ?? const []) v.id};
+    final selectedVoice = voiceIds.contains(prefs.voice) ? prefs.voice! : '';
 
     return Scaffold(
       backgroundColor: t.background,
@@ -395,6 +400,44 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
+
+                if (voice != null && voice.ttsAvailable) ...[
+                  const SizedBox(height: NexusSpacing.xl),
+                  _Section(
+                    label: 'VOICE',
+                    children: [
+                      _SwitchTile(
+                        icon: Icons.volume_up_rounded,
+                        title: 'Speak replies',
+                        subtitle: 'Read every reply aloud as it arrives '
+                            '(text-to-speech by ${voice.provider}).',
+                        value: prefs.speakReplies,
+                        onChanged: prefsCtrl.setSpeakReplies,
+                      ),
+                      if (voice.voices.isNotEmpty) ...[
+                        const _Divider(),
+                        _ChoiceTile<String>(
+                          icon: Icons.record_voice_over_rounded,
+                          title: 'Voice',
+                          value: selectedVoice,
+                          onChanged: (v) => prefsCtrl.setVoice(v.isEmpty ? null : v),
+                          options: [
+                            ('Server default', ''),
+                            for (final v in voice.voices) (v.name, v.id),
+                          ],
+                        ),
+                      ],
+                      if (voice.sttAvailable) ...[
+                        const _Divider(),
+                        const _InfoRow(
+                          icon: Icons.mic_rounded,
+                          label: 'Voice input',
+                          value: 'Hold the microphone in a chat',
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(

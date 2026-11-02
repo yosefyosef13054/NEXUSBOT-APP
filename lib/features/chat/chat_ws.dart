@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../core/api_exception.dart';
 import '../../core/env.dart';
 import 'chat_models.dart';
+import 'chat_repository.dart' show VoiceReply;
 
 /// WebSocket transport for `/api/v1/ws/sessions/{id}`.
 ///
@@ -144,7 +145,8 @@ class ChatWebSocket {
   ///
   /// [model] is a per-turn model override and [collectionIds] the knowledge
   /// scope for this turn; both are omitted (server resolves the session /
-  /// user default) when null.
+  /// user default) when null. [attachmentIds] binds uploads to the message
+  /// and [voiceReply] asks for `audio_chunk` frames before the final message.
   void sendUserMessage({
     required String content,
     bool useRag = true,
@@ -153,6 +155,8 @@ class ChatWebSocket {
     double? temperature,
     String? model,
     List<String>? collectionIds,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) {
     _send({
       'type': 'user_message',
@@ -163,6 +167,8 @@ class ChatWebSocket {
       'temperature': temperature,
       if (model != null) 'model': model,
       if (collectionIds != null) 'collection_ids': collectionIds,
+      if (attachmentIds != null && attachmentIds.isNotEmpty) 'attachment_ids': attachmentIds,
+      ...?voiceReply?.toJson(),
     });
   }
 

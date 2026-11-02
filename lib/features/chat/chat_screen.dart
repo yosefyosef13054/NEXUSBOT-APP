@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
+import '../../core/file_sink.dart';
+import '../../core/preferences.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -10,13 +13,23 @@ import '../../shared/home_shell.dart';
 import '../assistants/assistant_model.dart';
 import '../assistants/assistant_picker.dart';
 import '../assistants/assistants_repository.dart';
+import '../attachments/attachment_picker.dart';
+import '../attachments/attachment_widgets.dart';
+import '../attachments/attachments_repository.dart';
 import '../collections/collection_model.dart';
 import '../collections/collections_repository.dart';
 import '../models/model_info.dart';
 import '../models/models_repository.dart';
+import '../share/share_model.dart';
+import '../share/share_repository.dart';
+import '../share/share_sheet.dart';
 import '../tools/tools_repository.dart';
 import '../usage/usage_repository.dart';
 import '../usage/usage_widgets.dart';
+import '../voice/recorder.dart';
+import '../voice/voice_button.dart';
+import '../voice/voice_models.dart';
+import '../voice/voice_repository.dart';
 import 'chat_controller.dart';
 import 'chat_models.dart';
 import 'chat_repository.dart';
@@ -25,9 +38,15 @@ import 'chat_widgets.dart';
 import 'citation_sheet.dart';
 import 'tool_chips.dart';
 
+enum _ChatMenuAction { exportMarkdown, exportJson, share }
+
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.sessionId});
+  const ChatScreen({super.key, required this.sessionId, this.attachGenerationId});
   final String sessionId;
+
+  /// A generation to attach to on open (from a `generation_done` push
+  /// notification: `/chat/:id?generation=<gid>`).
+  final String? attachGenerationId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -39,6 +58,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// The user message currently open in the inline editor.
   String? _editingId;
   bool _quotaRefreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _attachFromRoute(widget.attachGenerationId);
+  }
+
+  @override
+  void didUpdateWidget(ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.attachGenerationId != oldWidget.attachGenerationId) {
+      _attachFromRoute(widget.attachGenerationId);
+    }
+  }
+
+  void _attachFromRoute(String? generationId) {
+    if (generationId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.attachToGeneration(generationId);
+    });
+  }
 
   @override
   void dispose() {
@@ -58,6 +98,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   ChatController get _controller => ref.read(chatControllerProvider(widget.sessionId).notifier);
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   Future<void> _pickTools(List<ToolInfo> tools) async {
     final current = _controller.effectiveToolNames ?? defaultToolSelection(tools);
@@ -103,6 +148,71 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  // ── Attachments ────────────────────────────────────────────────────────
+
+  Future<void> _attach(AttachmentSource source) async {
+    final PickedAttachment? picked;
+    try {
+      picked = await ref.read(attachmentPickerProvider).pick(source);
+    } catch (e) {
+      _toast('Could not open the picker: $e');
+      return;
+    }
+    if (picked == null || !mounted) return;
+    await _controller.attachFile(bytes: picked.bytes, filename: picked.filename);
+  }
+
+  /// Downloads an attachment / artifact and hands it to the platform
+  /// (share sheet or browser download).
+  Future<void> _download(Attachment a) async {
+    try {
+      final content = await ref.read(attachmentContentLoaderProvider).load(a.url);
+      await ref.read(fileSinkProvider).save(
+            bytes: content.bytes,
+            filename: a.name,
+            mimeType: content.mimeType.isEmpty ? a.mimeType : content.mimeType,
+          );
+    } catch (e) {
+      _toast(errorText(e));
+    }
+  }
+
+  Future<void> _open(Attachment a) async {
+    if (a.isRenderableImage) {
+      await showAttachmentViewer(context, a, onDownload: () => _download(a));
+      return;
+    }
+    await _download(a);
+  }
+
+  // ── Export & share ────────────────────────────────────────────────────
+
+  Future<void> _export(ExportFormat format) async {
+    try {
+      final repo = await ref.read(shareRepositoryProvider.future);
+      final file = await repo.export(widget.sessionId, format: format);
+      await ref.read(fileSinkProvider).save(
+            bytes: file.bytes,
+            filename: file.filename,
+            mimeType: file.mimeType,
+          );
+      _toast('Exported ${file.filename}');
+    } catch (e) {
+      _toast(errorText(e));
+    }
+  }
+
+  void _onMenu(_ChatMenuAction action) {
+    switch (action) {
+      case _ChatMenuAction.exportMarkdown:
+        _export(ExportFormat.markdown);
+      case _ChatMenuAction.exportJson:
+        _export(ExportFormat.json);
+      case _ChatMenuAction.share:
+        showShareLinksSheet(context, sessionId: widget.sessionId);
+    }
+  }
+
   /// `call_id`s of the tool rows directly above message [i] — those runs are
   /// rendered as standalone chips, so the assistant strip must skip them.
   static Set<String> _toolRowIdsBefore(List<ChatMessage> msgs, int i) {
@@ -127,6 +237,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return 'Knowledge · ${ids.length} collection${ids.length == 1 ? '' : 's'}';
   }
 
+  /// A voice clip is being transcribed (the optimistic voice bubble is still
+  /// pending).
+  static bool _voiceInFlight(ChatState state) =>
+      state.sending &&
+      state.messages.any(
+        (m) => m.isPendingUser && m.content == ChatController.voicePlaceholderText,
+      );
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
@@ -147,6 +265,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ? null
         : assistants.where((a) => a.id == session!.assistantId).firstOrNull;
     final quota = ref.watch(quotaStateProvider);
+    final voice = ref.watch(voiceCapabilitiesProvider).valueOrNull ?? VoiceCapabilities.none;
+    final prefs = ref.watch(prefsProvider);
 
     ref.listen(chatControllerProvider(widget.sessionId), (_, __) => _scrollToBottom());
 
@@ -167,6 +287,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final sessionModelLabel = catalog.labelFor(sessionModelId);
     final effectiveTools = controller.effectiveToolNames;
     final busy = state.sending || state.switchingBranch;
+
+    // Images need a vision model; an unknown model is left to the server.
+    final effectiveModel = catalog.byId(state.modelOverride ?? sessionModelId);
+    final canAttachImages = effectiveModel == null || effectiveModel.supportsVision;
+    final imageAttachHint = canAttachImages
+        ? null
+        : '${effectiveModel.displayName} cannot read images — pick a vision model';
 
     return Scaffold(
       backgroundColor: t.background,
@@ -223,6 +350,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded, size: 20),
             onPressed: busy ? null : controller.reload,
+          ),
+          PopupMenuButton<_ChatMenuAction>(
+            tooltip: 'Chat actions',
+            icon: const Icon(Icons.more_vert_rounded, size: 20),
+            onSelected: _onMenu,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _ChatMenuAction.exportMarkdown,
+                child: _MenuRow(icon: Icons.article_outlined, label: 'Export as Markdown'),
+              ),
+              PopupMenuItem(
+                value: _ChatMenuAction.exportJson,
+                child: _MenuRow(icon: Icons.data_object_rounded, label: 'Export as JSON'),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: _ChatMenuAction.share,
+                child: _MenuRow(icon: Icons.link_rounded, label: 'Share link…'),
+              ),
+            ],
           ),
         ],
       ),
@@ -286,6 +433,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             switchingBranch: state.switchingBranch,
                             onFeedback: isAssistant && !busy ? (r) => _rate(m, r) : null,
                             onMemoriesTap: () => context.go(AppRoutes.memory),
+                            onOpenAttachment: _open,
+                            onOpenArtifact: _open,
+                            onPlayAudio: isAssistant && m.audio?.isPlayable == true
+                                ? () => controller.playMessageAudio(m)
+                                : null,
+                            playingAudio: state.playingMessageId == m.id,
                           );
                         },
                       ),
@@ -349,6 +502,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 onPickKnowledge: collections == null || collections.isEmpty
                     ? null
                     : () => _pickKnowledge(collections, state.collectionIds),
+                attachments: state.pendingAttachments,
+                uploading: state.uploading,
+                onAttach: _attach,
+                onRemoveAttachment: (a) => controller.removeAttachment(a.id),
+                canAttachImages: canAttachImages,
+                imageAttachHint: imageAttachHint,
+                voiceButton: voice.sttAvailable
+                    ? PushToTalkButton(
+                        recorder: ref.watch(recorderProvider),
+                        onClip: controller.sendVoice,
+                        onError: _toast,
+                        enabled: quota == null && !busy,
+                        processing: _voiceInFlight(state),
+                      )
+                    : null,
+                speakReplies: voice.ttsAvailable ? prefs.speakReplies : null,
+                onToggleSpeak: ref.read(prefsProvider.notifier).setSpeakReplies,
                 modelChip: catalog.isEmpty
                     ? null
                     : ModelMenuButton(
@@ -370,6 +540,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: NexusSpacing.sm),
+        Text(label),
+      ],
     );
   }
 }
@@ -482,8 +669,9 @@ class _EmptyChat extends StatelessWidget {
               Text(
                 a?.description?.trim().isNotEmpty == true
                     ? a!.description!.trim()
-                    : 'Ask anything. Toggle RAG to ground answers in your documents, pick the '
-                        'Knowledge collections to search, or let NexusBot run tools for you.',
+                    : 'Ask anything. Attach images or files, toggle RAG to ground answers in your '
+                        'documents, pick the Knowledge collections to search, or let NexusBot run '
+                        'tools for you.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: t.textSecondary, fontSize: 13.5, height: 1.5),
               ),
@@ -495,7 +683,7 @@ class _EmptyChat extends StatelessWidget {
                 children: [
                   _SuggestionChip(icon: Icons.menu_book_rounded, label: 'Summarize a document'),
                   _SuggestionChip(icon: Icons.code_rounded, label: 'Explain a code snippet'),
-                  _SuggestionChip(icon: Icons.lightbulb_outline_rounded, label: 'Brainstorm ideas'),
+                  _SuggestionChip(icon: Icons.image_outlined, label: 'Describe a photo'),
                   _SuggestionChip(icon: Icons.translate_rounded, label: 'Translate text'),
                 ],
               ),

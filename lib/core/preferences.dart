@@ -20,6 +20,8 @@ class AppPrefs {
     required this.streamingEnabled,
     required this.ragByDefault,
     required this.toolsByDefault,
+    this.speakReplies = false,
+    this.voice,
     this.activeOrgId,
     this.activeOrgUserId,
   });
@@ -30,6 +32,13 @@ class AppPrefs {
   final bool streamingEnabled;
   final bool ragByDefault;
   final bool toolsByDefault;
+
+  /// Ask for a spoken reply (`voice_reply`) on every typed send. Only offered
+  /// when the server has text-to-speech (`GET /audio/voices`).
+  final bool speakReplies;
+
+  /// Voice id for spoken replies (`GET /audio/voices`); null = server default.
+  final String? voice;
 
   /// The organization the app acts in (`X-Org-Id`); null = the personal
   /// workspace. Stored together with the user it was chosen by
@@ -48,6 +57,9 @@ class AppPrefs {
     bool? streamingEnabled,
     bool? ragByDefault,
     bool? toolsByDefault,
+    bool? speakReplies,
+    String? voice,
+    bool clearVoice = false,
     String? activeOrgId,
     String? activeOrgUserId,
     bool clearActiveOrg = false,
@@ -59,6 +71,8 @@ class AppPrefs {
         streamingEnabled: streamingEnabled ?? this.streamingEnabled,
         ragByDefault: ragByDefault ?? this.ragByDefault,
         toolsByDefault: toolsByDefault ?? this.toolsByDefault,
+        speakReplies: speakReplies ?? this.speakReplies,
+        voice: clearVoice ? null : (voice ?? this.voice),
         activeOrgId: clearActiveOrg ? null : (activeOrgId ?? this.activeOrgId),
         activeOrgUserId: clearActiveOrg ? null : (activeOrgUserId ?? this.activeOrgUserId),
       );
@@ -80,6 +94,8 @@ class _PrefKeys {
   static const streaming = 'pref.streaming';
   static const rag = 'pref.rag';
   static const tools = 'pref.tools';
+  static const speakReplies = 'pref.speakReplies';
+  static const voice = 'pref.voice';
   static const activeOrg = 'pref.activeOrgId';
   static const activeOrgUser = 'pref.activeOrgUserId';
 }
@@ -98,6 +114,8 @@ class PrefsController extends StateNotifier<AppPrefs> {
         streamingEnabled: p.getBool(_PrefKeys.streaming) ?? true,
         ragByDefault: p.getBool(_PrefKeys.rag) ?? true,
         toolsByDefault: p.getBool(_PrefKeys.tools) ?? true,
+        speakReplies: p.getBool(_PrefKeys.speakReplies) ?? false,
+        voice: p.getString(_PrefKeys.voice),
         activeOrgId: p.getString(_PrefKeys.activeOrg),
         activeOrgUserId: p.getString(_PrefKeys.activeOrgUser),
       );
@@ -130,6 +148,21 @@ class PrefsController extends StateNotifier<AppPrefs> {
   Future<void> setTools(bool v) async {
     state = state.copyWith(toolsByDefault: v);
     await _prefs.setBool(_PrefKeys.tools, v);
+  }
+
+  Future<void> setSpeakReplies(bool v) async {
+    state = state.copyWith(speakReplies: v);
+    await _prefs.setBool(_PrefKeys.speakReplies, v);
+  }
+
+  /// Voice for spoken replies; null restores the server default.
+  Future<void> setVoice(String? voice) async {
+    state = state.copyWith(voice: voice, clearVoice: voice == null);
+    if (voice == null) {
+      await _prefs.remove(_PrefKeys.voice);
+    } else {
+      await _prefs.setString(_PrefKeys.voice, voice);
+    }
   }
 
   /// Remembers the organization [userId] works in; null = their personal

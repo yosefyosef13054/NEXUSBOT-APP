@@ -241,6 +241,20 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: NexusSpacing.xl),
+                  _Section(
+                    label: 'TOOLS',
+                    children: [
+                      _ValueTile(
+                        icon: Icons.extension_rounded,
+                        title: 'MCP servers',
+                        value: canManage
+                            ? 'External tool servers (Model Context Protocol)'
+                            : 'Only owners and admins can manage MCP servers',
+                        onTap: canManage ? () => context.go(AppRoutes.orgMcp(o.id)) : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: NexusSpacing.xl),
                   _MembersSection(
                     members: members,
                     org: o,

@@ -22,4 +22,10 @@ class Env {
     'USE_WEBSOCKET',
     defaultValue: false,
   );
+
+  /// Push notification provider: `none` (default) or `fcm` — see
+  /// `features/push/push_service.dart` for what `fcm` still needs.
+  ///
+  ///   flutter run --dart-define=PUSH_PROVIDER=fcm
+  static const pushProvider = String.fromEnvironment('PUSH_PROVIDER', defaultValue: 'none');
 }

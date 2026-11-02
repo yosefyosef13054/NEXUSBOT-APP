@@ -1,4 +1,11 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:collection/collection.dart';
+
+import '../attachments/attachment_model.dart';
+
+export '../attachments/attachment_model.dart' show Attachment, AttachmentKind;
 
 enum MessageRole {
   user,
@@ -417,6 +424,45 @@ MessageFeedback? _feedbackFrom(Object? raw) =>
 List<String> _idsFrom(Object? raw) =>
     (raw as List? ?? const []).map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
 
+MessageAudio? _audioFrom(Object? raw) =>
+    raw is Map ? MessageAudio.fromJson(raw.cast<String, dynamic>()) : null;
+
+/// The spoken version of a reply (`assistant_message.data.audio` /
+/// `MessageRead.meta.audio`): the whole clip stored as an audio attachment,
+/// playable again through [url].
+class MessageAudio {
+  const MessageAudio({
+    required this.attachmentId,
+    required this.url,
+    this.format,
+    this.chunks = 1,
+  });
+
+  factory MessageAudio.fromJson(Map<String, dynamic> j) => MessageAudio(
+        attachmentId: (j['attachment_id'] as String?) ?? '',
+        url: (j['url'] as String?) ?? '',
+        format: j['format'] as String?,
+        chunks: (j['chunks'] as num?)?.toInt() ?? 1,
+      );
+
+  /// Built from the `audio_done.data.attachment` summary.
+  factory MessageAudio.fromAttachment(Attachment a, {int chunks = 1}) => MessageAudio(
+        attachmentId: a.id,
+        url: a.url,
+        format: a.mimeType.contains('/') ? a.mimeType.split('/').last : null,
+        chunks: chunks,
+      );
+
+  final String attachmentId;
+
+  /// Content URL of the clip (resolve through `AttachmentsRepository.resolveUrl`).
+  final String url;
+  final String? format;
+  final int chunks;
+
+  bool get isPlayable => url.isNotEmpty;
+}
+
 /// `meta.status` of a persisted assistant message.
 abstract final class MessageStatus {
   static const ok = 'ok';
@@ -445,6 +491,9 @@ class ChatMessage {
     this.feedback,
     this.memoriesUsed = const [],
     this.generationId,
+    this.attachments = const [],
+    this.artifacts = const [],
+    this.audio,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) {
@@ -464,6 +513,9 @@ class ChatMessage {
       feedback: _feedbackFrom(meta['feedback']),
       memoriesUsed: _idsFrom(meta['memories_used']),
       generationId: (meta['generation_id'] ?? j['generation_id']) as String?,
+      attachments: attachmentsFrom(meta['attachments']),
+      artifacts: attachmentsFrom(meta['artifacts']),
+      audio: _audioFrom(meta['audio']),
       citations: _citationsFrom(meta['citations']),
       // A `role: "tool"` row *is* one tool run: its meta carries the call,
       // its content the (truncated) output.
@@ -537,6 +589,17 @@ class ChatMessage {
   /// The generation that produced (or is producing) this reply.
   final String? generationId;
 
+  /// Images, files and audio clips the user attached to this message
+  /// (`meta.attachments` / `user_message.data.attachments`).
+  final List<Attachment> attachments;
+
+  /// Files produced by tools during the turn that made this reply
+  /// (`meta.artifacts` / `assistant_message.data.artifacts`).
+  final List<Attachment> artifacts;
+
+  /// The spoken version of the reply, when one was synthesized.
+  final MessageAudio? audio;
+
   /// A `role: "tool"` history row — rendered as a chip, never as a bubble.
   bool get isToolRun => role == MessageRole.tool;
 
@@ -565,6 +628,10 @@ class ChatMessage {
     bool clearFeedback = false,
     List<String>? memoriesUsed,
     String? generationId,
+    List<Attachment>? attachments,
+    List<Attachment>? artifacts,
+    MessageAudio? audio,
+    bool clearAudio = false,
   }) =>
       ChatMessage(
         id: id ?? this.id,
@@ -585,6 +652,9 @@ class ChatMessage {
         feedback: clearFeedback ? null : (feedback ?? this.feedback),
         memoriesUsed: memoriesUsed ?? this.memoriesUsed,
         generationId: generationId ?? this.generationId,
+        attachments: attachments ?? this.attachments,
+        artifacts: artifacts ?? this.artifacts,
+        audio: clearAudio ? null : (audio ?? this.audio),
       );
 }
 
@@ -650,6 +720,12 @@ sealed class StreamEvent {
         return DoneEvent(data: _asMap(data));
       case 'assistant_message':
         return AssistantMessageEvent(data: _asMap(data));
+      case 'artifact':
+        return ArtifactEvent(data: _asMap(data));
+      case 'audio_chunk':
+        return AudioChunkEvent(data: _asMap(data));
+      case 'audio_done':
+        return AudioDoneEvent(data: _asMap(data));
       case 'error':
         final map = data is Map ? data.cast<String, dynamic>() : const <String, dynamic>{};
         return ErrorEvent(
@@ -681,6 +757,12 @@ class UserMessageEvent extends StreamEvent {
   /// parent instead of continuing the tip).
   String? get parentId => data['parent_id'] as String?;
 
+  Map<String, dynamic> get _meta => (data['meta'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+  /// The attachments bound to the message (`data.attachments`, or
+  /// `data.meta.attachments` when the server sends the full `MessageRead`).
+  List<Attachment> get attachments => attachmentsFrom(data['attachments'] ?? _meta['attachments']);
+
   ChatMessage toMessage(String sessionId, {DateTime? fallbackCreatedAt}) => ChatMessage(
         id: id ?? 'user-${DateTime.now().microsecondsSinceEpoch}',
         sessionId: (data['session_id'] as String?) ?? sessionId,
@@ -692,6 +774,7 @@ class UserMessageEvent extends StreamEvent {
         parentId: parentId,
         siblings: _siblingsFrom(data['siblings']),
         generationId: generationId,
+        attachments: attachments,
       );
 }
 
@@ -784,6 +867,12 @@ class AssistantMessageEvent extends StreamEvent {
   /// Ids of the memories injected into this turn (`meta.memories_used`).
   List<String> get memoriesUsed => _idsFrom(data['memories_used'] ?? _meta['memories_used']);
 
+  /// Files produced by tools during the turn (`data.artifacts` / `meta.artifacts`).
+  List<Attachment> get artifacts => attachmentsFrom(data['artifacts'] ?? _meta['artifacts']);
+
+  /// The stored spoken reply, for replay (`data.audio` / `meta.audio`).
+  MessageAudio? get audio => _audioFrom(data['audio'] ?? _meta['audio']);
+
   ChatMessage toMessage(String sessionId) {
     final meta = _meta;
     return ChatMessage(
@@ -804,7 +893,61 @@ class AssistantMessageEvent extends StreamEvent {
       feedback: _feedbackFrom(meta['feedback']),
       memoriesUsed: memoriesUsed,
       generationId: generationId,
+      artifacts: artifacts,
+      audio: audio,
     );
+  }
+}
+
+/// A file a tool produced during the turn (`run_python` plots, generated
+/// documents, …). Arrives while the turn runs; the final `assistant_message`
+/// lists the same artifacts again.
+class ArtifactEvent extends StreamEvent {
+  const ArtifactEvent({required this.data});
+  final Map<String, dynamic> data;
+
+  Attachment get artifact => Attachment.fromJson(data);
+}
+
+/// One sentence group of the spoken reply (`voice_reply`), base64-encoded
+/// audio in [data]. Chunks arrive in order after `done` and before
+/// `assistant_message`; play them back to back.
+class AudioChunkEvent extends StreamEvent {
+  const AudioChunkEvent({required this.data});
+  final Map<String, dynamic> data;
+
+  int get index => (data['index'] as num?)?.toInt() ?? 0;
+  String get text => (data['text'] as String?) ?? '';
+  String? get format => data['format'] as String?;
+  String get mimeType =>
+      (data['mime_type'] as String?) ?? (format == null ? 'audio/mpeg' : 'audio/$format');
+
+  /// The decoded clip; empty when the payload is missing or not valid base64.
+  Uint8List get bytes {
+    final raw = data['data'];
+    if (raw is! String || raw.isEmpty) return Uint8List(0);
+    try {
+      return base64Decode(base64.normalize(raw));
+    } on FormatException {
+      return Uint8List(0);
+    }
+  }
+}
+
+/// End of the spoken reply: how many chunks were sent and, when the server
+/// keeps spoken replies, the attachment holding the whole clip. [error] is
+/// set when synthesis failed midway (the text reply is unaffected).
+class AudioDoneEvent extends StreamEvent {
+  const AudioDoneEvent({required this.data});
+  final Map<String, dynamic> data;
+
+  int get chunks => (data['chunks'] as num?)?.toInt() ?? 0;
+  String? get error => data['error'] as String?;
+  Attachment? get attachment {
+    final raw = data['attachment'];
+    if (raw is! Map) return null;
+    final a = Attachment.fromJson(raw.cast<String, dynamic>());
+    return a.id.isEmpty ? null : a;
   }
 }
 

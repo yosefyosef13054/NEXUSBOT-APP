@@ -46,6 +46,12 @@ NexusBot's Flutter app is a thin, well-architected client over the NexusBot REST
 - 🧠 **Memory** — NexusBot remembers facts, preferences and standing instructions across chats; a **Memory** screen lists, edits and forgets them, and replies that used memories say so.
 - 🌿 **Branching** — edit a user message in place (the reply streams into a new branch) or regenerate; a "‹ 2/3 ›" switcher walks the siblings.
 - 🔁 **Resumable & background turns** — a dropped stream reconnects once from the last frame; a chat that opens mid-reply attaches to the running generation; "Send in background" lets the server finish even if the app goes away. Every send carries an `Idempotency-Key`.
+- 🖼 **Attachments & vision** — attach photos (library / camera) and files (PDF, Word, text, CSV, JSON, audio) from the composer; uploads show as chips, go out as `attachment_ids`, and render on the bubble as an image grid (tap for full screen) or file chips ("Transcribed", "Text extracted"). Images need a model with `supports_vision` — the picker says so otherwise.
+- 📎 **Artifacts** — files a tool produces (`run_python` plots, generated documents) stream in as `artifact` frames and show as cards under the reply with an inline preview and download.
+- 🎙 **Voice** — push-to-talk records a clip and sends it through `/messages/voice`; the transcript becomes the user bubble and the reply streams back. "Speak replies" plays `audio_chunk` frames as they arrive, replies keep a **Play reply** button, and Settings picks the voice.
+- 🧩 **MCP servers** — org admins register Model Context Protocol tool servers (HTTP / SSE; stdio for server admins), test the connection and toggle approval; the tool picker groups tools by **Built-in** / server.
+- 📤 **Export & share** — download a chat as Markdown or JSON (share sheet / browser download) or mint a read-only link with an expiry, copy / share it, and revoke links from a sheet.
+- 🔔 **Push notifications** — a `PushService` abstraction registers the device token with `/devices` and routes `generation_done` taps to the chat, attaching to the finished generation (FCM is a documented stub behind `--dart-define=PUSH_PROVIDER=fcm`).
 - 🔐 **JWT auth** — register / login, tokens stored in the platform secure store, with **transparent, single-flight access-token refresh** on `401` (and proactively before a stream opens). Rotating refresh tokens, server-side sign-out, change password, edit display name and delete account.
 - 📄 **Document upload** — pick a file, upload, and watch ingest status update.
 - 🎨 **Adaptive, branded UI** — a navigation **drawer on mobile** and a **persistent sidebar on tablet/desktop**, dark/light themes, crimson brand, Markdown + syntax-highlighted code blocks.
@@ -94,15 +100,16 @@ The app follows a clean **feature-first** structure with a small shared core. St
 | `/splash` | Splash | Resolves the stored session, then goes to `/` or `/login`. |
 | `/login`, `/register` | Auth | Unreachable while signed in. |
 | `/` | Landing | Opens the most recent chat automatically, or shows a **New chat** call to action. |
-| `/chat/:sessionId` | Chat | Deep-linkable; the sidebar highlights the open session. Header shows the session model with a switch menu. |
+| `/chat/:sessionId` | Chat | Deep-linkable; the sidebar highlights the open session. Header shows the session model with a switch menu and a ⋮ menu (export, share link). `?generation=<id>` (what a push notification opens) attaches to that generation. |
 | `/documents` | Documents | Upload (with an optional collection), add from URL, collection filter, move to collection, ingest status. |
 | `/collections` | Collections | Create, rename, delete (optionally with the documents) knowledge bases. |
 | `/assistants`, `/assistants/new`, `/assistants/:id` | Assistants | The workspace's personas: list, create / edit form, delete. |
 | `/memory` | Memory | "What NexusBot remembers": list by kind, add, edit, forget, clear all. |
 | `/orgs/:id` | Workspace | Name, budgets, allowed models, members (read-only for plain members). |
 | `/orgs/:id/usage` | Usage report | Owner / admin: date range, group by user / model / day, bar list. |
+| `/orgs/:id/mcp` | MCP servers | Owner / admin: list, add (HTTP / SSE; stdio for server admins), edit, test connection, enable / approval toggles, remove. Linked from the workspace screen. |
 | `/admin/usage`, `/admin/feedback` | Administration | Server admins only (`UserRead.role == "admin"`): cross-org usage, feedback inbox. |
-| `/settings` | Settings | Workspace, usage, appearance, chat defaults (incl. memory), model (from the server), administration, account. |
+| `/settings` | Settings | Workspace, usage, appearance, chat defaults (incl. memory), voice (speak replies, voice), model (from the server), administration, account. |
 
 Everything below the auth screens lives inside one `ShellRoute` (`shared/home_shell.dart`), so the drawer (mobile) / persistent sidebar (tablet, desktop) never remounts between pages. Sidebar taps and **New chat** simply `context.go(...)`.
 
@@ -180,6 +187,38 @@ Thumbs up / down live in the actions row of every finished reply (`FeedbackButto
 - **Send in background** (composer overflow menu) uses `POST /sessions/{id}/messages/background` (202 with `generation_id` and the persisted `user_message`), then attaches; the reply is produced even if the app disconnects.
 - Every send attempt — `/messages`, `/messages/stream`, `/messages/background` and `/messages/{id}/edit` — carries a fresh UUID `Idempotency-Key`; Dio's transparent 401 retry resends the same request, so a retry within 24 h replays the original turn instead of creating a duplicate.
 
+### Attachments & vision
+
+- `features/attachments`: `Attachment` (parses the full `AttachmentRead` and the compact summary alike), `AttachmentsRepository` (`POST /sessions/{id}/attachments` multipart, list / get / delete, `resolveUrl`, `fetchContent`) and `AttachmentPicker` (`image_picker` for the library / camera, `file_picker` for documents and audio clips; behind an interface so the screen is testable).
+- The composer's paper-clip menu uploads first; the result waits as a chip (thumbnail or kind icon, size, remove) in `ChatState.pendingAttachments` and every send path — stream, blocking, background, edit and the WebSocket `user_message` frame — carries the ids as `attachment_ids`, then the list is cleared. A refused send keeps them so the user can retry.
+- Images need a vision model: the effective model (`modelOverride` → session → assistant → default) is looked up in the catalog and, when it lacks `supports_vision`, the photo entries are disabled with an explanation; the server's 422 (`details.vision_models`) is shown with the models that can read images.
+- `user_message.data.attachments` / `MessageRead.meta.attachments` feed the user bubble: images as a tappable grid (`AuthenticatedImage` fetches the bytes through the API client — bearer, `X-Org-Id` and a `307` to presigned storage followed **without** the bearer — and caches them by URL), files and audio as chips with the transcript / extraction hint. Tapping an image opens a full-screen viewer; other files are downloaded through the `FileSink`.
+
+### Artifacts
+
+`artifact` frames (files tools produced during the turn) are merged into the bubble as they arrive and reconciled with `assistant_message.data.artifacts` / `meta.artifacts` at the end; each renders as an `ArtifactCard` (name, size, mime type, inline preview for images, download) under the reply.
+
+### Voice
+
+- `features/voice`: `VoiceRepository` (`GET /audio/voices`, `POST /audio/transcriptions`, `POST /audio/speech`, `POST /sessions/{id}/messages/voice`), `voiceCapabilitiesProvider` (an older server or one without a provider resolves to "none"), the `Recorder` interface with `RecordPackageRecorder` (`record`: AAC/M4A where supported, WAV otherwise, Opus/WebM on the web) and the `AudioPlayerService` interface with `JustAudioPlayerService` (`just_audio`, clips played back to back from memory).
+- The microphone appears only with `stt_available`: tap or hold the push-to-talk button, release / tap again to send. `ChatController.sendVoice` posts the clip (202), shows the transcript as the user bubble with the clip as an `audio` attachment, then attaches to the generation through the existing event replay; voice turns always ask for a spoken reply.
+- "Speak replies" (Settings → VOICE, also a **Speak** chip in the composer; only with `tts_available`) sends `voice_reply` (+ the chosen `voice`) on typed sends. `audio_chunk` frames are decoded and queued on the player in order; `audio_done` / `assistant_message.data.audio` keep the stored clip so a **Play reply** button can replay it later.
+
+### Tools & MCP servers
+
+- `GET /tools` items carry `source` (`builtin` or `mcp:<server>`); `groupToolsBySource` orders built-ins first, then one group per server, and the tool picker shows a heading per group (MCP tools are listed by their short name, the full `mcp:<server>:<tool>` goes into `tool_names`).
+- `features/mcp`: `MCPRepository` (`/mcp/servers` list / create / get / patch / delete, `/test`, `/tools`; every call sends `X-Org-Id` for the organization it manages) and the `/orgs/:id/mcp` screen. `stdio` is only offered to server administrators; secrets (`headers`, `env`) are write-only and shown as key names.
+
+### Export & share
+
+- `features/share`: `ShareRepository` (`GET /sessions/{id}/export?format=markdown|json` → bytes + the `Content-Disposition` filename, `POST/GET/DELETE /sessions/{id}/share`) and the share sheet (create with an expiry, copy / system-share the one-time URL, list active links with view counts, revoke one or all).
+- Downloads go through the `FileSink` abstraction (`core/file_sink.dart`): the system share sheet via `share_plus` on mobile / desktop, an anchor download on the web. The public `/shared/{token}` page is served by the backend; the app only hands out the link.
+
+### Push notifications
+
+- `features/push`: `DevicesRepository` (`POST /devices`, `GET /devices`, `DELETE /devices/{token}`), the `PushService` interface (`NoopPushService` by default; `FcmPushService` is a documented stub — see the file for the Firebase wiring steps — selected with `--dart-define=PUSH_PROVIDER=fcm`), `PushRegistrar` (registers the token after sign-in, removes it at sign-out) and `PushRouter.handlePushPayload` (`{type: generation_done, session_id, generation_id}` → `/chat/:id?generation=<gid>`).
+- The chat screen reads the `generation` query parameter and calls `ChatController.attachToGeneration`: a reply already in the history is a no-op, a running or finished generation is attached through the event replay, and a replay that is gone (`404`) falls back to a history reload.
+
 ### Search
 
 The sidebar search filters chat titles locally and, after a 350 ms debounce, calls `POST /search` for message contents. Hits are listed under **MESSAGES** with the server's `highlight` snippet — `<mark>` runs are rendered bold by `shared/highlight_text.dart` — and tapping one opens the session.
@@ -197,7 +236,11 @@ Both SSE and WebSocket deliver the same discriminated events (parsed by the seal
 
 ```jsonc
 { "type": "user_message",      "data": { "id": "…", "content": "…", "generation_id": "…", "parent_id": null,
-                                         "siblings": { "index": 0, "count": 1 } } }
+                                         "siblings": { "index": 0, "count": 1 },
+                                         "attachments": [ { "id": "…", "kind": "image", "name": "chart.png",
+                                                            "mime_type": "image/png", "size_bytes": 48213,
+                                                            "width": 1200, "height": 800, "url": "/api/v1/…/content",
+                                                            "has_text": false } ] } }
 { "type": "citations",         "data": [ { "document_id": "…", "document_name": "spec.pdf", "chunk_id": "…",
                                            "chunk_index": 3, "page": 4, "section": "2. Scope > 2.1 Goals",
                                            "start_index": 1200, "end_index": 1980, "collection_id": null,
@@ -209,17 +252,24 @@ Both SSE and WebSocket deliver the same discriminated events (parsed by the seal
 { "type": "approval_required", "data": { "approval_id": "…", "session_id": "…", "message_id": "…",
                                          "expires_at": "…", "tool_calls": [ { "call_id": "call_1",
                                          "tool": "web_search", "input": {…}, "description": "…" } ] } }
+{ "type": "artifact",          "data": { "id": "…", "kind": "artifact", "name": "plot.png", "mime_type": "image/png",
+                                         "size_bytes": 2048, "url": "/api/v1/…/content", "description": null } }
 { "type": "usage",             "data": { "prompt_tokens": 1240, "completion_tokens": 312, "total_tokens": 1552 } }
 { "type": "done",              "data": { "text": "Hello!", "latency_ms": 820, "interrupted": false,
                                          "status": "ok", "model": "gpt-4o-mini", "generation_id": "…" } }
+{ "type": "audio_chunk",       "data": { "index": 0, "text": "Hello!", "format": "wav", "mime_type": "audio/wav",
+                                         "data": "<base64>" } }                      // only with voice_reply
+{ "type": "audio_done",        "data": { "chunks": 1, "attachment": { "id": "…", "kind": "audio", … } } }
 { "type": "assistant_message", "data": { "id": "…", "content": "Hello!", "citations": […], "tool_calls": […],
                                          "interrupted": false, "status": "ok", "model": "gpt-4o-mini",
                                          "approval": null, "generation_id": "…", "parent_id": "…",
+                                         "artifacts": […], "audio": { "attachment_id": "…", "url": "…",
+                                         "format": "wav", "chunks": 1 },
                                          "meta": { "memories_used": ["…"], "feedback": null } } }
 { "type": "error",             "data": { "code": "busy", "message": "…", "details": {} } }
 ```
 
-The chat controller appends `token` events to a live buffer, swaps in `citations` / `tool_call` events as they arrive (upserting on `call_id`), attaches an `approval_required` card, and replaces the bubble with the canonical `assistant_message` when the stream completes — matching on the persisted message id so an approval continuation lands in the bubble it paused in. Session titles are generated server-side *after* the stream closes, so the sidebar re-fetches the session list ~2 s after each turn (and on app resume).
+The chat controller appends `token` events to a live buffer, swaps in `citations` / `tool_call` events as they arrive (upserting on `call_id`), attaches an `approval_required` card, merges `artifact` frames, queues `audio_chunk`s on the player, and replaces the bubble with the canonical `assistant_message` when the stream completes — matching on the persisted message id so an approval continuation lands in the bubble it paused in. Unknown frame types are ignored. Session titles are generated server-side *after* the stream closes, so the sidebar re-fetches the session list ~2 s after each turn (and on app resume).
 
 **SSE** is a plain `POST …/messages/stream` with `Accept: text/event-stream`, read through Dio as a byte stream and split into `id: <seq>` / `data: <json>` frames by `core/sse_parser.dart` (the `id` is the cursor for the generation event replay). Cancelling the subscription closes the HTTP connection, but a disconnect alone no longer stops the server-side turn (it keeps running and stays resumable), so **Stop** on SSE first calls `POST …/generations/{generation_id}/stop`: the server persists the partial reply (`meta.status == "interrupted"`) and the app keeps the text it already has.
 
@@ -238,7 +288,9 @@ The chat controller appends `token` events to a live buffer, swaps in `citations
 | Networking | `dio`, `web_socket_channel` |
 | Persistence | `flutter_secure_storage`, `shared_preferences` |
 | UI | `google_fonts`, `flutter_svg`, `flutter_markdown`, `markdown` |
-| Utilities | `intl`, `uuid`, `file_picker`, `collection` |
+| Media | `image_picker` (photos), `file_picker` (files), `record` (microphone), `just_audio` (spoken replies) |
+| Sharing | `share_plus`, `path_provider` (exports / downloads), `web` (browser download) |
+| Utilities | `intl`, `uuid`, `collection` |
 | Tooling | `flutter_lints`, `flutter_launcher_icons` |
 
 ---
@@ -249,6 +301,7 @@ The chat controller appends `token` events to a live buffer, swaps in `citations
 
 - **Flutter SDK 3.27+** (Dart 3.6+) — `flutter doctor` should be green for your target platform.
 - A running **NexusBot backend** (see the [backend repo](https://github.com/yosefyosef13054/NEXUSBOT)). By default the app expects it at `http://localhost:8000/api/v1`.
+- Platform permissions for voice and photos are declared already: iOS / macOS usage strings (`NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`), the macOS microphone / network-client entitlements, and Android's `RECORD_AUDIO` (merged in by the `record` plugin; the plugins need `minSdk 24`, Flutter's current default). Voice features only appear when the backend reports them in `GET /audio/voices`.
 
 ### Run
 
@@ -297,6 +350,8 @@ flutter run \
 |---|---|---|
 | `API_BASE_URL` | `--dart-define` at build / run | `http://localhost:8000/api/v1` |
 | `USE_WEBSOCKET` | `--dart-define` at build / run | `false` (SSE) |
+| `PUSH_PROVIDER` | `--dart-define` at build / run: `none` or `fcm` (stub, see `features/push/push_service.dart`) | `none` |
+| Speak replies / voice | Settings → VOICE (only when the server has text-to-speech); the composer's **Speak** chip toggles it too | Off / server default |
 | Theme (system / light / dark) | Settings screen | System |
 | Model | Settings screen — the list comes from `GET /models`; the choice is saved locally and as the account's `default_model` | Server default |
 | Streaming on / off | Settings screen | On |
@@ -322,7 +377,8 @@ lib/
 │  ├─ api_exception.dart     # Typed error envelope (code · message · request_id)
 │  ├─ auth_session.dart      # TokenRefresher: single-flight refresh + proactive JWT exp check
 │  ├─ sse_parser.dart        # Pure-Dart text/event-stream frame decoder
-│  ├─ env.dart               # API_BASE_URL / WS URL / USE_WEBSOCKET (dart-define)
+│  ├─ env.dart               # API_BASE_URL / WS URL / USE_WEBSOCKET / PUSH_PROVIDER (dart-define)
+│  ├─ file_sink.dart         # FileSink: share sheet (io) / browser download (web) for exports and artifacts
 │  ├─ router.dart            # go_router shell routes + auth redirect
 │  ├─ secure_storage.dart    # Token storage (Keychain / Keystore)
 │  ├─ preferences.dart       # SharedPreferences-backed app settings + per-session prefs
@@ -334,18 +390,24 @@ lib/
 ├─ features/
 │  ├─ admin/                 # server-admin feedback inbox (+ repository)
 │  ├─ assistants/            # personas: model · repository · list · editor form · new-chat picker / header menu
+│  ├─ attachments/           # Attachment model · repository (upload, content w/ 307) · picker · AuthenticatedImage, chips, grid, artifact card, viewer
 │  ├─ auth/                  # login · register · splash · repository (default_model, memory_enabled) · providers
-│  ├─ chat/                  # chat screen · controller (resume, attach, edit, branch, quota) · repository
-│  │                         # (ChatTurn + generation tracking, approvals, siblings/branch, feedback, background)
-│  │                         # · models · WS · approval card · tool chips · citation sheet · sheets · message extras
+│  ├─ chat/                  # chat screen · controller (resume, attach, edit, branch, quota, attachments, voice, audio)
+│  │                         # · repository (ChatTurn + generation tracking, approvals, siblings/branch, feedback,
+│  │                         # background, attachment_ids / voice_reply) · models · WS · approval card · tool chips
+│  │                         # · citation sheet · sheets (grouped tool picker) · message extras
 │  ├─ collections/           # knowledge bases: model · repository · /collections screen
+│  ├─ mcp/                   # MCP servers: model · repository (X-Org-Id per org) · /orgs/:id/mcp screen
 │  ├─ documents/             # upload (de-dup aware, collection) · add from URL · filter · move · chunks
 │  ├─ memory/                # long-term memory: model · repository · /memory screen
 │  ├─ models/                # GET /models catalog + default-model resolution
 │  ├─ orgs/                  # organizations: model · repository + active-org providers · switcher · settings screen
-│  ├─ tools/                 # GET /tools catalog + default tool selection
+│  ├─ push/                  # devices repository · PushService (noop / FCM stub) · registrar · payload router
+│  ├─ share/                 # export + share links: model · repository · share sheet
+│  ├─ tools/                 # GET /tools catalog (+ source) · default tool selection · grouping by source
 │  ├─ usage/                 # usage model · repository + quota state · widgets (bars, meter, banner) · report screen
-│  └─ settings/              # workspace · usage · theme · transport · model · chat defaults · memory · admin · account
+│  ├─ voice/                 # capabilities + voice turns repository · Recorder · AudioPlayerService · push-to-talk button
+│  └─ settings/              # workspace · usage · theme · transport · voice · model · chat defaults · memory · admin · account
 └─ shared/
    ├─ home_shell.dart        # ShellRoute host: drawer (mobile) / sidebar (wide) + landing route
    ├─ sidebar.dart           # Workspace switcher, session list, search, new chat (assistant picker), links, usage, profile
@@ -366,7 +428,7 @@ dart run flutter_launcher_icons
 
 ## ✅ Continuous integration
 
-`.github/workflows/ci.yml` runs `flutter pub get`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser (incl. `id:` lines), the stream-event parser (including `approval_required`, structured citations, `role: "tool"` rows, `generation_id`, `parent_id` / `siblings`, `memories_used`, `feedback` and `quota_exceeded` frames), the chat reducer via a fake repository (approval flow, per-turn overrides, sibling switching, the edit flow, resume-after-drop, attaching to a running generation, background sends, the quota banner state, feedback), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame and `org_id`), widget smoke tests (approval card, tool chips, citations, sibling switcher, feedback buttons, inline editor, quota banner) and end-to-end checks of the API client and every repository — models, tools, collections, documents, approvals, search, orgs + members (with the `X-Org-Id` header), usage and the `quota_exceeded` 429, assistants, feedback, memories, siblings / branch, generation event replay with `after=`, background sends and the `Idempotency-Key` header — against loopback HTTP servers.
+`.github/workflows/ci.yml` runs `flutter pub get`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser (incl. `id:` lines), the stream-event parser (including `approval_required`, structured citations, `role: "tool"` rows, `generation_id`, `parent_id` / `siblings`, `memories_used`, `feedback` and `quota_exceeded` frames), the chat reducer via a fake repository (approval flow, per-turn overrides, sibling switching, the edit flow, resume-after-drop, attaching to a running generation, background sends, the quota banner state, feedback), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame and `org_id`), widget smoke tests (approval card, tool chips, citations, sibling switcher, feedback buttons, inline editor, quota banner, attachment chips / grid, artifact cards, the composer's attach menu and voice button, push-to-talk with a fake recorder, the grouped tool picker), the Phase 4 reducer paths (sends with `attachment_ids`, `artifact` / `audio_chunk` / `audio_done` frames, voice turns, playback, `attachToGeneration` for push payloads), the push router / registrar, and end-to-end checks of the API client and every repository — models, tools (with `source`), collections, documents, approvals, search, orgs + members (with the `X-Org-Id` header), usage and the `quota_exceeded` 429, assistants, feedback, memories, siblings / branch, generation event replay with `after=`, background sends and the `Idempotency-Key` header, attachments (multipart upload, content bytes and the `307` to presigned storage without the bearer), voice (`/audio/*`, the multipart voice turn), MCP servers, export bytes + headers, share links and devices — against loopback HTTP servers.
 
 ---
 

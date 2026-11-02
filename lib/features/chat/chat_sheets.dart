@@ -69,44 +69,85 @@ class _ToolPickerSheetState extends State<_ToolPickerSheet> {
       child: ListView(
         shrinkWrap: true,
         children: [
-          for (final tool in widget.tools)
-            CheckboxListTile(
-              value: _checked.contains(tool.name),
-              onChanged: (v) => setState(() {
-                if (v == true) {
-                  _checked.add(tool.name);
-                } else {
-                  _checked.remove(tool.name);
-                }
-              }),
-              activeColor: NexusColors.crimson,
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm),
-              title: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      tool.name,
-                      style: TextStyle(
-                        color: t.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+          for (final group in groupToolsBySource(widget.tools)) ...[
+            ToolGroupHeader(group: group),
+            for (final tool in group.tools)
+              CheckboxListTile(
+                value: _checked.contains(tool.name),
+                onChanged: (v) => setState(() {
+                  if (v == true) {
+                    _checked.add(tool.name);
+                  } else {
+                    _checked.remove(tool.name);
+                  }
+                }),
+                activeColor: NexusColors.crimson,
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm),
+                title: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        tool.shortName,
+                        style: TextStyle(
+                          color: t.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  if (tool.requiresApproval) ...[
-                    const SizedBox(width: 6),
-                    const Tooltip(
-                      message: 'Asks for your approval before running',
-                      child: Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
-                    ),
+                    if (tool.requiresApproval) ...[
+                      const SizedBox(width: 6),
+                      const Tooltip(
+                        message: 'Asks for your approval before running',
+                        child: Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
+                      ),
+                    ],
                   ],
-                ],
+                ),
+                subtitle: tool.description.isEmpty
+                    ? null
+                    : Text(tool.description, style: TextStyle(color: t.textMuted, fontSize: 12)),
               ),
-              subtitle: tool.description.isEmpty
-                  ? null
-                  : Text(tool.description, style: TextStyle(color: t.textMuted, fontSize: 12)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// `BUILT-IN` / `<server>` heading in the tool picker (MCP servers get an
+/// extension icon so their tools are recognisable).
+class ToolGroupHeader extends StatelessWidget {
+  const ToolGroupHeader({super.key, required this.group});
+  final ToolGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(NexusSpacing.sm, NexusSpacing.md, NexusSpacing.sm, 2),
+      child: Row(
+        children: [
+          Icon(
+            group.isBuiltin ? Icons.build_rounded : Icons.extension_rounded,
+            size: 12,
+            color: t.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            group.label.toUpperCase(),
+            style: TextStyle(
+              color: t.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
             ),
+          ),
+          if (!group.isBuiltin) ...[
+            const SizedBox(width: 6),
+            Text('MCP server', style: TextStyle(color: t.textMuted, fontSize: 10)),
+          ],
         ],
       ),
     );

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nexusbot/features/attachments/attachment_model.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
 
 void main() {
@@ -727,6 +730,278 @@ void phase3Tests() {
       });
       expect(bg.generationId, 'g2');
       expect(bg.userMessage?.id, 'u1');
+    });
+  });
+
+  phase4Tests();
+}
+
+void phase4Tests() {
+  const imageSummary = {
+    'id': 'att-1',
+    'kind': 'image',
+    'name': 'chart.png',
+    'mime_type': 'image/png',
+    'size_bytes': 48213,
+    'width': 1200,
+    'height': 800,
+    'url': '/api/v1/sessions/s1/attachments/att-1/content',
+    'description': null,
+    'has_text': false,
+  };
+  const audioSummary = {
+    'id': 'att-2',
+    'kind': 'audio',
+    'name': 'voice.m4a',
+    'mime_type': 'audio/mp4',
+    'size_bytes': 9000,
+    'url': '/api/v1/sessions/s1/attachments/att-2/content',
+    'has_text': true,
+  };
+
+  group('Phase 4 events', () {
+    test('artifact frames carry the file summary', () {
+      final e = StreamEvent.fromJson({
+        'type': 'artifact',
+        'data': {
+          'id': 'art-1',
+          'kind': 'artifact',
+          'name': 'plot.png',
+          'mime_type': 'image/png',
+          'size_bytes': 2048,
+          'url': '/api/v1/sessions/s1/attachments/art-1/content',
+          'description': 'Sales by month',
+          'has_text': false,
+        },
+      });
+      expect(e, isA<ArtifactEvent>());
+      final a = (e as ArtifactEvent).artifact;
+      expect(a.id, 'art-1');
+      expect(a.kind, AttachmentKind.artifact);
+      expect(a.isArtifact, isTrue);
+      expect(a.isRenderableImage, isTrue);
+      expect(a.description, 'Sales by month');
+      expect(a.sizeLabel, '2.0 KB');
+    });
+
+    test('audio_chunk decodes base64 and falls back to the format for the mime type', () {
+      final e = StreamEvent.fromJson({
+        'type': 'audio_chunk',
+        'data': {
+          'index': 0,
+          'text': 'First sentence.',
+          'format': 'wav',
+          'mime_type': 'audio/wav',
+          'data': base64Encode([1, 2, 3, 4]),
+        },
+      }) as AudioChunkEvent;
+      expect(e.index, 0);
+      expect(e.text, 'First sentence.');
+      expect(e.mimeType, 'audio/wav');
+      expect(e.bytes, [1, 2, 3, 4]);
+
+      final noMime = StreamEvent.fromJson({
+        'type': 'audio_chunk',
+        'data': {
+          'index': 1,
+          'format': 'mp3',
+          'data': base64Encode([9]),
+        },
+      }) as AudioChunkEvent;
+      expect(noMime.mimeType, 'audio/mp3');
+      expect(noMime.bytes, [9]);
+
+      final broken = StreamEvent.fromJson({
+        'type': 'audio_chunk',
+        'data': {'index': 2, 'data': '***'},
+      }) as AudioChunkEvent;
+      expect(broken.bytes, isEmpty);
+      expect((StreamEvent.fromJson({'type': 'audio_chunk'}) as AudioChunkEvent).bytes, isEmpty);
+    });
+
+    test('audio_done carries the chunk count, the stored clip or an error', () {
+      final done = StreamEvent.fromJson({
+        'type': 'audio_done',
+        'data': {'chunks': 3, 'attachment': audioSummary},
+      }) as AudioDoneEvent;
+      expect(done.chunks, 3);
+      expect(done.attachment?.id, 'att-2');
+      expect(done.error, isNull);
+      final audio = MessageAudio.fromAttachment(done.attachment!, chunks: done.chunks);
+      expect(audio.attachmentId, 'att-2');
+      expect(audio.url, '/api/v1/sessions/s1/attachments/att-2/content');
+      expect(audio.format, 'mp4');
+      expect(audio.chunks, 3);
+
+      final failed = StreamEvent.fromJson({
+        'type': 'audio_done',
+        'data': {'chunks': 1, 'attachment': null, 'error': 'tts down'},
+      }) as AudioDoneEvent;
+      expect(failed.attachment, isNull);
+      expect(failed.error, 'tts down');
+    });
+
+    test('user_message carries the bound attachments', () {
+      final e = StreamEvent.fromJson({
+        'type': 'user_message',
+        'data': {
+          'id': 'u1',
+          'content': 'look',
+          'attachments': [imageSummary, audioSummary],
+        },
+      }) as UserMessageEvent;
+      expect(e.attachments.map((a) => a.id), ['att-1', 'att-2']);
+      final m = e.toMessage('s1');
+      expect(m.attachments.first.isImage, isTrue);
+      expect(m.attachments.first.width, 1200);
+      expect(m.attachments.last.isAudio, isTrue);
+      expect(m.attachments.last.hasText, isTrue);
+
+      final viaMeta = StreamEvent.fromJson({
+        'type': 'user_message',
+        'data': {
+          'id': 'u2',
+          'content': 'x',
+          'meta': {
+            'attachments': [imageSummary],
+          },
+        },
+      }) as UserMessageEvent;
+      expect(viaMeta.toMessage('s1').attachments.single.name, 'chart.png');
+    });
+
+    test('assistant_message carries artifacts and audio (data or meta)', () {
+      final e = StreamEvent.fromJson({
+        'type': 'assistant_message',
+        'data': {
+          'id': 'a1',
+          'content': 'Here.',
+          'artifacts': [
+            {
+              'id': 'art-1',
+              'kind': 'artifact',
+              'name': 'out.csv',
+              'mime_type': 'text/csv',
+              'size_bytes': 10,
+              'url': '/api/v1/sessions/s1/attachments/art-1/content',
+            },
+          ],
+          'audio': {
+            'attachment_id': 'spk-1',
+            'url': '/api/v1/sessions/s1/attachments/spk-1/content',
+            'format': 'mp3',
+            'chunks': 2,
+          },
+        },
+      }) as AssistantMessageEvent;
+      expect(e.artifacts.single.name, 'out.csv');
+      expect(e.audio?.attachmentId, 'spk-1');
+      final m = e.toMessage('s1');
+      expect(m.artifacts.single.isArtifact, isTrue);
+      expect(m.audio?.format, 'mp3');
+      expect(m.audio?.chunks, 2);
+      expect(m.audio?.isPlayable, isTrue);
+      expect(m.copyWith(clearAudio: true).audio, isNull);
+
+      final viaMeta = StreamEvent.fromJson({
+        'type': 'assistant_message',
+        'data': {
+          'id': 'a2',
+          'content': 'x',
+          'meta': {
+            'artifacts': [
+              {'id': 'art-2', 'kind': 'artifact', 'name': 'b.txt', 'mime_type': 'text/plain'},
+            ],
+            'audio': {'attachment_id': 'spk-2', 'url': '/u'},
+          },
+        },
+      }) as AssistantMessageEvent;
+      expect(viaMeta.toMessage('s1').artifacts.single.id, 'art-2');
+      expect(viaMeta.toMessage('s1').audio?.attachmentId, 'spk-2');
+    });
+
+    test('history rows parse meta.attachments, meta.artifacts and meta.audio', () {
+      final user = ChatMessage.fromJson({
+        'id': 'u1',
+        'session_id': 's1',
+        'role': 'user',
+        'content': 'look',
+        'created_at': '2026-01-01T00:00:00Z',
+        'meta': {
+          'attachments': [imageSummary],
+        },
+      });
+      expect(user.attachments.single.id, 'att-1');
+      expect(user.artifacts, isEmpty);
+      final reply = ChatMessage.fromJson({
+        'id': 'a1',
+        'session_id': 's1',
+        'role': 'assistant',
+        'content': 'x',
+        'created_at': '2026-01-01T00:00:00Z',
+        'meta': {
+          'artifacts': [
+            {'id': 'art-1', 'kind': 'artifact', 'name': 'a', 'mime_type': 'image/png'},
+          ],
+          'audio': {'attachment_id': 'spk', 'url': '/x', 'format': 'wav', 'chunks': 1},
+        },
+      });
+      expect(reply.artifacts.single.id, 'art-1');
+      expect(reply.audio?.url, '/x');
+      final none = ChatMessage.fromJson({
+        'id': 'a2',
+        'session_id': 's1',
+        'role': 'assistant',
+        'content': 'x',
+        'created_at': '2026-01-01T00:00:00Z',
+      });
+      expect(none.attachments, isEmpty);
+      expect(none.audio, isNull);
+    });
+
+    test('unknown frame types stay ignorable', () {
+      expect(StreamEvent.fromJson({'type': 'thinking', 'data': {}}), isA<UnknownEvent>());
+    });
+  });
+
+  group('Attachment model', () {
+    test('parses the full read and the summary alike', () {
+      final full = Attachment.fromJson({
+        ...imageSummary,
+        'session_id': 's1',
+        'message_id': null,
+        'text_excerpt': null,
+        'created_at': '2026-01-01T00:00:00Z',
+      });
+      expect(full.sessionId, 's1');
+      expect(full.messageId, isNull);
+      expect(full.createdAt?.year, 2026);
+      expect(full.sizeLabel, '47 KB');
+      expect(full.isImage, isTrue);
+      expect(full.isRenderableImage, isTrue);
+      expect(full.toJson()['kind'], 'image');
+      expect(full.copyWith(messageId: 'm1').messageId, 'm1');
+
+      final unknown = Attachment.fromJson({'id': 'x', 'kind': 'weird', 'url': '/u'});
+      expect(unknown.kind, AttachmentKind.unknown);
+      expect(unknown.mimeType, 'application/octet-stream');
+      expect(attachmentsFrom([imageSummary, 'junk', null, {}]), hasLength(1));
+    });
+
+    test('mergeAttachments dedupes by id and formatBytes rounds sensibly', () {
+      final merged = mergeAttachments(
+        [Attachment.fromJson(imageSummary)],
+        [
+          Attachment.fromJson({...imageSummary, 'name': 'renamed.png'}),
+          Attachment.fromJson(audioSummary),
+        ],
+      );
+      expect(merged.map((a) => a.name), ['renamed.png', 'voice.m4a']);
+      expect(formatBytes(0), '0 B');
+      expect(formatBytes(999), '999 B');
+      expect(formatBytes(2048), '2.0 KB');
+      expect(formatBytes(48213), '47 KB');
+      expect(formatBytes(5 * 1024 * 1024), '5.0 MB');
     });
   });
 }

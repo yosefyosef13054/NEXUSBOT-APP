@@ -1,16 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexusbot/core/api_client.dart';
 import 'package:nexusbot/core/preferences.dart';
 import 'package:nexusbot/core/secure_storage.dart';
+import 'package:nexusbot/features/attachments/attachments_repository.dart';
 import 'package:nexusbot/features/chat/chat_controller.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
 import 'package:nexusbot/features/chat/chat_repository.dart';
 import 'package:nexusbot/features/tools/tools_repository.dart';
 import 'package:nexusbot/features/usage/usage_model.dart';
 import 'package:nexusbot/features/usage/usage_repository.dart';
+import 'package:nexusbot/features/voice/audio_player_service.dart';
+import 'package:nexusbot/features/voice/recorder.dart';
+import 'package:nexusbot/features/voice/voice_models.dart';
+import 'package:nexusbot/features/voice/voice_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/fakes.dart';
@@ -34,6 +41,11 @@ class FakeChatRepository extends ChatRepository {
   List<String>? lastToolNames;
   String? lastModel;
   List<String>? lastCollectionIds;
+
+  // ── Phase 4 ──
+  /// `attachment_ids` / `voice_reply` of the most recent send of any kind.
+  List<String>? lastAttachmentIds;
+  VoiceReply? lastVoiceReply;
 
   /// Every `Idempotency-Key` seen on a send / edit / background call, in order.
   final keys = <String?>[];
@@ -77,12 +89,16 @@ class FakeChatRepository extends ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     lastUseRag = useRag;
     lastUseTools = useTools;
     lastToolNames = toolNames;
     lastModel = model;
     lastCollectionIds = collectionIds;
+    lastAttachmentIds = attachmentIds;
+    lastVoiceReply = voiceReply;
     keys.add(idempotencyKey);
     return blockingResult!;
   }
@@ -168,6 +184,8 @@ class FakeChatRepository extends ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     final error = openError;
     if (error != null) throw error;
@@ -177,6 +195,8 @@ class FakeChatRepository extends ChatRepository {
     lastToolNames = toolNames;
     lastModel = model;
     lastCollectionIds = collectionIds;
+    lastAttachmentIds = attachmentIds;
+    lastVoiceReply = voiceReply;
     keys.add(idempotencyKey);
     return _openTurn(transport);
   }
@@ -218,10 +238,14 @@ class FakeChatRepository extends ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     final error = editError;
     if (error != null) throw error;
     editCalls.add((messageId: messageId, content: content));
+    lastAttachmentIds = attachmentIds;
+    lastVoiceReply = voiceReply;
     keys.add(idempotencyKey);
     return _openTurn(StreamTransport.sse);
   }
@@ -251,10 +275,14 @@ class FakeChatRepository extends ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     final error = backgroundError;
     if (error != null) throw error;
     backgroundCalls.add(content);
+    lastAttachmentIds = attachmentIds;
+    lastVoiceReply = voiceReply;
     keys.add(idempotencyKey);
     return backgroundResult!;
   }
@@ -277,6 +305,145 @@ class FakeChatRepository extends ChatRepository {
     final error = feedbackError;
     if (error != null) throw error;
     feedbackCalls.add((messageId: messageId, rating: null, comment: null));
+  }
+}
+
+/// `POST /sessions/{id}/attachments` / `DELETE` stand-in.
+class FakeAttachmentsRepository extends AttachmentsRepository {
+  FakeAttachmentsRepository() : super(ApiClient.create(MemoryTokenStorage()));
+
+  Object? uploadError;
+  final uploads = <String>[];
+  final deletes = <String>[];
+
+  @override
+  Future<Attachment> upload({
+    required String sessionId,
+    required Uint8List bytes,
+    required String filename,
+    void Function(double progress)? onProgress,
+  }) async {
+    final error = uploadError;
+    if (error != null) throw error;
+    uploads.add(filename);
+    final image = filename.endsWith('.png');
+    return Attachment(
+      id: 'att-$filename',
+      kind: image ? AttachmentKind.image : AttachmentKind.file,
+      name: filename,
+      mimeType: image ? 'image/png' : 'text/plain',
+      sizeBytes: bytes.length,
+      url: '/api/v1/sessions/$sessionId/attachments/att-$filename/content',
+      hasText: !image,
+      sessionId: sessionId,
+    );
+  }
+
+  @override
+  Future<void> delete(String sessionId, String attachmentId) async => deletes.add(attachmentId);
+}
+
+/// `POST /sessions/{id}/messages/voice` stand-in.
+class FakeVoiceRepository extends VoiceRepository {
+  FakeVoiceRepository() : super(ApiClient.create(MemoryTokenStorage()));
+
+  Object? error;
+  VoiceTurn? result;
+  final calls = <({
+    String filename,
+    int size,
+    bool useRag,
+    bool useTools,
+    String? model,
+    bool replyAudio,
+    String? voice,
+    String? idempotencyKey,
+  })>[];
+
+  @override
+  Future<VoiceTurn> sendVoiceTurn({
+    required String sessionId,
+    required Uint8List bytes,
+    required String filename,
+    bool useRag = true,
+    bool useTools = true,
+    String? model,
+    bool replyAudio = true,
+    String? voice,
+    String? audioFormat,
+    String? language,
+    String? idempotencyKey,
+  }) async {
+    final e = error;
+    if (e != null) throw e;
+    calls.add(
+      (
+        filename: filename,
+        size: bytes.length,
+        useRag: useRag,
+        useTools: useTools,
+        model: model,
+        replyAudio: replyAudio,
+        voice: voice,
+        idempotencyKey: idempotencyKey,
+      ),
+    );
+    return result!;
+  }
+}
+
+/// Records what the controller plays; `playingStream` is driven by the test.
+class FakeAudioPlayerService implements AudioPlayerService {
+  final enqueued = <AudioClip>[];
+  final played = <AudioClip>[];
+  int stopCalls = 0;
+  final _playing = StreamController<bool>.broadcast();
+  bool _isPlaying = false;
+
+  @override
+  bool get isPlaying => _isPlaying;
+
+  @override
+  Stream<bool> get playingStream => _playing.stream;
+
+  void finish() {
+    _isPlaying = false;
+    _playing.add(false);
+  }
+
+  @override
+  Future<void> enqueue(AudioClip clip) async {
+    enqueued.add(clip);
+    _isPlaying = true;
+  }
+
+  @override
+  Future<void> play(AudioClip clip) async {
+    played.add(clip);
+    _isPlaying = true;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    _isPlaying = false;
+  }
+
+  @override
+  Future<void> dispose() => _playing.close();
+}
+
+/// Serves attachment content from memory.
+class FakeContentLoader implements AttachmentContentLoader {
+  final loaded = <String>[];
+  Object? error;
+
+  @override
+  Future<AttachmentBytes> load(String url) async {
+    final e = error;
+    if (e != null) throw e;
+    loaded.add(url);
+    return AttachmentBytes(bytes: Uint8List.fromList([1, 2, 3]), mimeType: 'audio/mpeg');
   }
 }
 
@@ -360,6 +527,10 @@ void main() {
 
   late FakeChatRepository repo;
   late FakeUsageRepository usageRepo;
+  late FakeAttachmentsRepository attachmentsRepo;
+  late FakeVoiceRepository voiceRepo;
+  late FakeAudioPlayerService player;
+  late FakeContentLoader loader;
   late ProviderContainer container;
 
   Future<void> setUpContainer({
@@ -367,6 +538,8 @@ void main() {
     bool streaming = true,
     bool tools = true,
     bool rag = true,
+    bool speakReplies = false,
+    String? voice,
     List<ToolInfo> toolCatalog = const [],
     List<String>? sessionToolNames,
   }) async {
@@ -375,6 +548,8 @@ void main() {
       'pref.streaming': streaming,
       'pref.tools': tools,
       'pref.rag': rag,
+      'pref.speakReplies': speakReplies,
+      if (voice != null) 'pref.voice': voice,
       if (sessionToolNames != null) 'pref.session.$session.toolNames': sessionToolNames,
     });
     final prefs = await SharedPreferences.getInstance();
@@ -384,6 +559,10 @@ void main() {
         tokenStorageProvider.overrideWithValue(MemoryTokenStorage()),
         chatRepositoryProvider.overrideWith((ref) async => repo),
         usageRepositoryProvider.overrideWith((ref) async => usageRepo),
+        attachmentsRepositoryProvider.overrideWith((ref) async => attachmentsRepo),
+        voiceRepositoryProvider.overrideWith((ref) async => voiceRepo),
+        audioPlayerProvider.overrideWithValue(player),
+        attachmentContentLoaderProvider.overrideWithValue(loader),
         prefsProvider.overrideWith((ref) => PrefsController(prefs)),
         sessionPrefsProvider.overrideWith((ref) => SessionPrefs(prefs)),
         toolCatalogProvider.overrideWith((ref) async => toolCatalog),
@@ -446,6 +625,10 @@ void main() {
   setUp(() {
     repo = FakeChatRepository();
     usageRepo = FakeUsageRepository();
+    attachmentsRepo = FakeAttachmentsRepository();
+    voiceRepo = FakeVoiceRepository();
+    player = FakeAudioPlayerService();
+    loader = FakeContentLoader();
   });
 
   test('loads history on creation', () async {
@@ -1637,6 +1820,455 @@ void main() {
       expect(state().error, 'offline');
       await controller().clearFeedback('a1');
       expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reverted again');
+    });
+  });
+
+  // ── Phase 4: attachments ─────────────────────────────────────────────
+
+  group('attachments', () {
+    final png = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+
+    test('attachFile uploads into the composer; the next send binds the ids and clears them',
+        () async {
+      await setUpContainer();
+      final att = await controller().attachFile(bytes: png, filename: 'chart.png');
+      expect(att?.id, 'att-chart.png');
+      expect(attachmentsRepo.uploads, ['chart.png']);
+      expect(state().uploading, 0);
+      expect(state().pendingAttachments.map((a) => a.id), ['att-chart.png']);
+      expect(controller().hasPendingImages, isTrue);
+
+      await send('what is this?');
+      expect(repo.lastAttachmentIds, ['att-chart.png']);
+      expect(repo.lastVoiceReply, isNull, reason: 'speak replies is off');
+      expect(state().pendingAttachments, isEmpty, reason: 'bound to the turn');
+      final optimistic = state().messages.first;
+      expect(optimistic.isPendingUser, isTrue);
+      expect(optimistic.attachments.single.name, 'chart.png', reason: 'shown on the bubble');
+
+      await emit(
+        repo.turn!,
+        const UserMessageEvent(
+          data: {
+            'id': 'u1',
+            'content': 'what is this?',
+            'attachments': [
+              {
+                'id': 'att-chart.png',
+                'kind': 'image',
+                'name': 'chart.png',
+                'mime_type': 'image/png',
+                'size_bytes': 4,
+                'width': 10,
+                'height': 10,
+                'url': '/api/v1/sessions/s1/attachments/att-chart.png/content',
+              },
+            ],
+          },
+        ),
+      );
+      expect(state().messages.first.id, 'u1');
+      expect(state().messages.first.attachments.single.width, 10);
+    });
+
+    test('a refused upload surfaces the error and nothing is parked', () async {
+      await setUpContainer();
+      attachmentsRepo.uploadError =
+          ApiException(code: 'validation_error', message: 'Type not allowed', statusCode: 422);
+      final att = await controller().attachFile(bytes: png, filename: 'x.exe');
+      expect(att, isNull);
+      expect(state().pendingAttachments, isEmpty);
+      expect(state().uploading, 0);
+      expect(state().error, 'Type not allowed');
+    });
+
+    test('a vision refusal keeps the attachments and names the vision models', () async {
+      await setUpContainer();
+      await controller().attachFile(bytes: png, filename: 'chart.png');
+      repo.openError = ApiException(
+        code: 'validation_error',
+        message: 'Model llama3 cannot read images.',
+        statusCode: 422,
+        details: const {
+          'vision_models': ['gpt-4o', 'gpt-4o-mini'],
+        },
+      );
+      await controller().send('describe');
+      await pumpEventQueue();
+      expect(state().sending, isFalse);
+      expect(
+        state().error,
+        'Model llama3 cannot read images. Models with vision: gpt-4o, gpt-4o-mini.',
+      );
+      expect(state().pendingAttachments, hasLength(1), reason: 'retry after switching models');
+    });
+
+    test('removeAttachment drops the chip and deletes the upload', () async {
+      await setUpContainer();
+      await controller().attachFile(bytes: png, filename: 'notes.txt');
+      await controller().removeAttachment('att-notes.txt');
+      expect(state().pendingAttachments, isEmpty);
+      expect(attachmentsRepo.deletes, ['att-notes.txt']);
+      await send('hi');
+      expect(repo.lastAttachmentIds, isNull);
+    });
+
+    test('background sends and edits carry the attachment ids too', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({'id': 'a1', 'content': 'a'}),
+      ];
+      await setUpContainer();
+      await controller().attachFile(bytes: png, filename: 'a.txt');
+      repo.backgroundResult =
+          BackgroundSend(generationId: 'g5', userMessage: userMessage('u5', 'x'));
+      await controller().sendInBackground('x');
+      await pumpEventQueue();
+      expect(repo.lastAttachmentIds, ['att-a.txt']);
+      expect(state().pendingAttachments, isEmpty);
+      await emit(repo.turn!, const AssistantMessageEvent(data: {'id': 'a5', 'content': 'y'}));
+
+      await controller().attachFile(bytes: png, filename: 'b.txt');
+      await controller().editMessage('u1', 'q2');
+      await pumpEventQueue();
+      expect(repo.lastAttachmentIds, ['att-b.txt']);
+      expect(state().pendingAttachments, isEmpty);
+    });
+
+    test('the Speak replies preference asks for a spoken reply with the chosen voice', () async {
+      await setUpContainer(speakReplies: true, voice: 'nova');
+      await send('read this');
+      expect(repo.lastVoiceReply?.voice, 'nova');
+      expect(repo.lastVoiceReply?.toJson(), {'voice_reply': true, 'voice': 'nova'});
+    });
+  });
+
+  // ── Phase 4: artifacts and spoken replies ────────────────────────────
+
+  group('artifacts & audio', () {
+    const artifactJson = {
+      'id': 'art-1',
+      'kind': 'artifact',
+      'name': 'plot.png',
+      'mime_type': 'image/png',
+      'size_bytes': 1234,
+      'url': '/api/v1/sessions/s1/attachments/art-1/content',
+      'has_text': false,
+    };
+
+    test('artifact frames attach files to the bubble and merge with the final message', () async {
+      await setUpContainer();
+      final turn = await send('plot it');
+      await emit(turn, const ArtifactEvent(data: artifactJson));
+      expect(state().messages.last.artifacts.single.name, 'plot.png');
+      expect(state().messages.last.artifacts.single.isRenderableImage, isTrue);
+      await emit(turn, const ArtifactEvent(data: artifactJson));
+      expect(state().messages.last.artifacts, hasLength(1), reason: 'same id, listed once');
+
+      await emit(
+        turn,
+        const AssistantMessageEvent(
+          data: {
+            'id': 'a1',
+            'content': 'Here is the plot.',
+            'artifacts': [
+              artifactJson,
+              {
+                'id': 'art-2',
+                'kind': 'artifact',
+                'name': 'data.csv',
+                'mime_type': 'text/csv',
+                'size_bytes': 10,
+                'url': '/api/v1/sessions/s1/attachments/art-2/content',
+              },
+            ],
+          },
+        ),
+      );
+      expect(state().messages.last.id, 'a1');
+      expect(state().messages.last.artifacts.map((a) => a.name), ['plot.png', 'data.csv']);
+    });
+
+    test('audio chunks play in order and audio_done keeps the stored clip for replay', () async {
+      await setUpContainer();
+      final turn = await send('say hi');
+      final placeholderId = state().messages.last.id;
+      await emit(
+        turn,
+        AudioChunkEvent(
+          data: {
+            'index': 0,
+            'text': 'Hi.',
+            'format': 'wav',
+            'mime_type': 'audio/wav',
+            'data': base64Encode([1, 2, 3]),
+          },
+        ),
+      );
+      await emit(
+        turn,
+        AudioChunkEvent(
+          data: {
+            'index': 1,
+            'text': 'Bye.',
+            'format': 'wav',
+            'data': base64Encode([4, 5]),
+          },
+        ),
+      );
+      await emit(turn, const AudioChunkEvent(data: {'index': 2, 'data': 'not base64!'}));
+      expect(player.enqueued.map((c) => c.bytes.length), [3, 2], reason: 'bad chunk skipped');
+      expect(player.enqueued.first.mimeType, 'audio/wav');
+      expect(player.enqueued.last.mimeType, 'audio/wav', reason: 'derived from the format');
+      expect(state().playingMessageId, placeholderId);
+
+      await emit(
+        turn,
+        const AudioDoneEvent(
+          data: {
+            'chunks': 2,
+            'attachment': {
+              'id': 'spk-1',
+              'kind': 'audio',
+              'name': 'reply.wav',
+              'mime_type': 'audio/wav',
+              'size_bytes': 5,
+              'url': '/api/v1/sessions/s1/attachments/spk-1/content',
+            },
+          },
+        ),
+      );
+      expect(state().messages.last.audio?.attachmentId, 'spk-1');
+      expect(state().messages.last.audio?.chunks, 2);
+      expect(state().messages.last.audio?.format, 'wav');
+
+      await emit(turn, const AssistantMessageEvent(data: {'id': 'a1', 'content': 'Hi. Bye.'}));
+      expect(state().messages.last.audio?.attachmentId, 'spk-1', reason: 'kept from audio_done');
+      expect(state().playingMessageId, 'a1', reason: 'follows the persisted bubble');
+      expect(state().sending, isFalse);
+
+      player.finish();
+      await pumpEventQueue();
+      expect(state().playingMessageId, isNull);
+    });
+
+    test('a failed synthesis leaves the text reply untouched', () async {
+      await setUpContainer();
+      final turn = await send('say hi');
+      await emit(
+        turn,
+        const AudioDoneEvent(data: {'chunks': 0, 'attachment': null, 'error': 'tts down'}),
+      );
+      await emit(turn, const AssistantMessageEvent(data: {'id': 'a1', 'content': 'Hi.'}));
+      expect(state().messages.last.audio, isNull);
+      expect(state().error, isNull);
+      expect(player.enqueued, isEmpty);
+    });
+
+    test('playMessageAudio downloads the stored clip; tapping again stops it', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({
+          'id': 'a1',
+          'content': 'Spoken.',
+          'meta': {
+            'audio': {
+              'attachment_id': 'spk-1',
+              'url': '/api/v1/sessions/s1/attachments/spk-1/content',
+              'format': 'mp3',
+              'chunks': 3,
+            },
+          },
+        }),
+      ];
+      await setUpContainer();
+      final reply = state().messages.last;
+      expect(reply.audio?.isPlayable, isTrue);
+      await controller().playMessageAudio(reply);
+      expect(loader.loaded, ['/api/v1/sessions/s1/attachments/spk-1/content']);
+      expect(player.played.single.mimeType, 'audio/mpeg');
+      expect(state().playingMessageId, 'a1');
+
+      await controller().playMessageAudio(reply);
+      expect(player.stopCalls, 1);
+      expect(state().playingMessageId, isNull);
+
+      loader.error = ApiException(code: 'not_found', message: 'gone', statusCode: 404);
+      await controller().playMessageAudio(reply);
+      expect(state().playingMessageId, isNull);
+      expect(state().error, 'gone');
+    });
+  });
+
+  // ── Phase 4: voice turns ─────────────────────────────────────────────
+
+  group('voice', () {
+    final clip = RecordedClip(
+      bytes: Uint8List.fromList(List.filled(32, 7)),
+      mimeType: 'audio/mp4',
+      filename: 'voice.m4a',
+    );
+
+    test('sendVoice posts the clip, shows the transcript and attaches to the generation', () async {
+      await setUpContainer(voice: 'alloy');
+      voiceRepo.result = const VoiceTurn(
+        generationId: 'g-v',
+        transcript: 'hello there',
+        userMessageId: 'u-v',
+        attachmentId: 'att-v',
+      );
+      controller().setModelOverride('gpt-4o');
+      final future = controller().sendVoice(clip);
+      expect(state().sending, isTrue);
+      expect(state().messages.first.content, ChatController.voicePlaceholderText);
+      await future;
+      await pumpEventQueue();
+
+      final call = voiceRepo.calls.single;
+      expect(call.filename, 'voice.m4a');
+      expect(call.size, 32);
+      expect(call.useRag, isTrue);
+      expect(call.useTools, isTrue);
+      expect(call.model, 'gpt-4o');
+      expect(call.replyAudio, isTrue, reason: 'voice mode always asks for a spoken reply');
+      expect(call.voice, 'alloy');
+      expect(call.idempotencyKey, isNotNull);
+
+      expect(repo.resumeCalls, [(generationId: 'g-v', after: null)]);
+      final user = state().messages.first;
+      expect(user.id, 'u-v');
+      expect(user.content, 'hello there');
+      expect(user.isPendingUser, isFalse);
+      expect(user.attachments.single.id, 'att-v');
+      expect(user.attachments.single.isAudio, isTrue);
+      expect(state().messages.last.streaming, isTrue);
+      expect(state().messages.last.generationId, 'g-v');
+
+      final turn = repo.turn!;
+      await emit(
+        turn,
+        const UserMessageEvent(
+          data: {
+            'id': 'u-v',
+            'content': 'hello there',
+            'generation_id': 'g-v',
+            'attachments': [
+              {
+                'id': 'att-v',
+                'kind': 'audio',
+                'name': 'voice.m4a',
+                'mime_type': 'audio/mp4',
+                'size_bytes': 32,
+                'url': '/api/v1/sessions/s1/attachments/att-v/content',
+                'has_text': true,
+              },
+            ],
+          },
+        ),
+      );
+      expect(state().messages, hasLength(2), reason: 'the replayed user message updates in place');
+      expect(state().messages.first.attachments.single.hasText, isTrue);
+      await emit(turn, const TokenEvent(token: 'Hi!'));
+      await emit(
+        turn,
+        const AssistantMessageEvent(data: {'id': 'a-v', 'content': 'Hi!', 'generation_id': 'g-v'}),
+      );
+      expect(state().messages.map((m) => m.id), ['u-v', 'a-v']);
+      expect(state().sending, isFalse);
+    });
+
+    test('a refused voice turn drops both optimistic bubbles', () async {
+      await setUpContainer();
+      voiceRepo.error = ApiException(
+        code: 'service_unavailable',
+        message: 'Speech-to-text is not configured',
+        statusCode: 503,
+        details: const {'code': 'voice_unavailable'},
+      );
+      await controller().sendVoice(clip);
+      await pumpEventQueue();
+      expect(state().sending, isFalse);
+      expect(state().messages, isEmpty);
+      expect(state().error, 'Voice is not available on this server.');
+      expect(repo.resumeCalls, isEmpty);
+    });
+
+    test('an empty clip is ignored', () async {
+      await setUpContainer();
+      await controller().sendVoice(
+        RecordedClip(bytes: Uint8List(0), mimeType: 'audio/wav', filename: 'voice.wav'),
+      );
+      expect(voiceRepo.calls, isEmpty);
+      expect(state().messages, isEmpty);
+    });
+  });
+
+  // ── Phase 4: push notifications ──────────────────────────────────────
+
+  group('push', () {
+    test('attachToGeneration attaches a generation that is not in the history yet', () async {
+      repo.history = [userMessage('u1', 'later')];
+      await setUpContainer();
+      await controller().attachToGeneration('g-push');
+      await pumpEventQueue();
+      expect(repo.resumeCalls, [(generationId: 'g-push', after: null)]);
+      expect(state().sending, isTrue);
+      expect(state().messages.last.streaming, isTrue);
+      expect(state().messages.last.generationId, 'g-push');
+
+      final turn = repo.turn!;
+      await emit(turn, const TokenEvent(token: 'Done'));
+      await emit(
+        turn,
+        const AssistantMessageEvent(
+          data: {'id': 'a-push', 'content': 'Done', 'generation_id': 'g-push'},
+        ),
+      );
+      expect(state().messages.map((m) => m.id), ['u1', 'a-push']);
+      expect(state().sending, isFalse);
+    });
+
+    test('attachToGeneration is a no-op when the reply is already there or a turn runs', () async {
+      repo.history = [
+        userMessage('u1', 'later'),
+        assistantFrom({'id': 'a1', 'content': 'Done', 'generation_id': 'g-push'}),
+      ];
+      await setUpContainer();
+      await controller().attachToGeneration('g-push');
+      expect(repo.resumeCalls, isEmpty);
+      expect(state().sending, isFalse);
+
+      await send('another');
+      await controller().attachToGeneration('g-other');
+      expect(repo.resumeCalls, isEmpty, reason: 'a turn is in flight');
+    });
+
+    test('attachToGeneration reloads the history when the replay is gone', () async {
+      repo.history = [userMessage('u1', 'later')];
+      await setUpContainer();
+      repo.resumeError =
+          ApiException(code: 'not_found', message: 'Generation expired', statusCode: 404);
+      repo.history = [
+        userMessage('u1', 'later'),
+        assistantFrom({'id': 'a1', 'content': 'Persisted reply'}),
+      ];
+      final historyCallsBefore = repo.historyCalls;
+      await controller().attachToGeneration('g-gone');
+      await pumpEventQueue();
+      expect(repo.historyCalls, historyCallsBefore + 1);
+      expect(state().sending, isFalse);
+      expect(state().error, isNull);
+      expect(state().messages.map((m) => m.id), ['u1', 'a1']);
+    });
+
+    test('a failed attach surfaces the error', () async {
+      repo.history = [userMessage('u1', 'later')];
+      await setUpContainer();
+      repo.resumeError = ApiException(code: 'network_error', message: 'offline');
+      await controller().attachToGeneration('g-x');
+      expect(state().sending, isFalse);
+      expect(state().error, 'offline');
+      expect(state().messages, hasLength(1), reason: 'empty placeholder dropped');
     });
   });
 }

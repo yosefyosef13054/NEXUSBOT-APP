@@ -12,6 +12,7 @@ import '../features/auth/splash_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/collections/collections_screen.dart';
 import '../features/documents/documents_screen.dart';
+import '../features/mcp/mcp_screen.dart';
 import '../features/memory/memory_screen.dart';
 import '../features/orgs/org_settings_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -33,10 +34,21 @@ class AppRoutes {
   static const settings = '/settings';
   static const adminUsage = '/admin/usage';
   static const adminFeedback = '/admin/feedback';
-  static String chat(String sessionId) => '/chat/$sessionId';
+
+  /// Query parameter naming a generation the chat should attach to on open
+  /// (a `generation_done` push notification).
+  static const generationParam = 'generation';
+
+  static String chat(String sessionId, {String? generationId}) => generationId == null
+      ? '/chat/$sessionId'
+      : Uri(
+          path: '/chat/$sessionId',
+          queryParameters: {generationParam: generationId},
+        ).toString();
   static String assistant(String assistantId) => '/assistants/$assistantId';
   static String orgSettings(String orgId) => '/orgs/$orgId';
   static String orgUsage(String orgId) => '/orgs/$orgId/usage';
+  static String orgMcp(String orgId) => '/orgs/$orgId/mcp';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -84,9 +96,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/chat/:sessionId',
             pageBuilder: (_, state) {
               final id = state.pathParameters['sessionId']!;
+              final generation = state.uri.queryParameters[AppRoutes.generationParam];
               return _fadePage(
                 ValueKey('chat-$id'),
-                ChatScreen(key: ValueKey(id), sessionId: id),
+                ChatScreen(
+                  key: ValueKey(id),
+                  sessionId: id,
+                  attachGenerationId: generation == null || generation.isEmpty ? null : generation,
+                ),
               );
             },
           ),
@@ -139,6 +156,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                   return _fadePage(
                     ValueKey('org-usage-$id'),
                     UsageReportScreen(key: ValueKey(id), orgId: id),
+                  );
+                },
+              ),
+              GoRoute(
+                path: 'mcp',
+                pageBuilder: (_, state) {
+                  final id = state.pathParameters['orgId']!;
+                  return _fadePage(
+                    ValueKey('org-mcp-$id'),
+                    MCPServersScreen(key: ValueKey(id), orgId: id),
                   );
                 },
               ),

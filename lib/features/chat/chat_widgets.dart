@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -6,11 +7,14 @@ import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../core/theme.dart';
+import '../attachments/attachment_widgets.dart';
 import 'approval_card.dart';
 import 'chat_models.dart';
 import 'code_block.dart';
 import 'message_extras.dart';
 import 'tool_chips.dart';
+
+export '../attachments/attachment_widgets.dart' show AttachmentSource;
 
 // ============================================================================
 // MessageBubble — wraps the bubble with tool chips above, citations below,
@@ -35,11 +39,25 @@ class MessageBubble extends StatefulWidget {
     this.switchingBranch = false,
     this.onFeedback,
     this.onMemoriesTap,
+    this.onOpenAttachment,
+    this.onOpenArtifact,
+    this.onPlayAudio,
+    this.playingAudio = false,
   });
 
   final ChatMessage message;
   final VoidCallback? onRegenerate;
   final bool isLastAssistant;
+
+  /// Tap on one of a user message's attachments (image viewer / download).
+  final ValueChanged<Attachment>? onOpenAttachment;
+
+  /// Download / open one of a reply's artifacts.
+  final ValueChanged<Attachment>? onOpenArtifact;
+
+  /// Play (or stop) the spoken version of a reply with `meta.audio`.
+  final VoidCallback? onPlayAudio;
+  final bool playingAudio;
 
   /// `call_id`s already rendered as standalone tool rows just above this
   /// bubble (history `role: "tool"` messages) — skipped in the strip so a
@@ -126,6 +144,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (_isUser && message.attachments.isNotEmpty) ...[
+                            MessageAttachments(
+                              attachments: message.attachments,
+                              onOpen: widget.onOpenAttachment,
+                            ),
+                            if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.sm),
+                          ],
                           if (approval == null || message.content.isNotEmpty)
                             _BubbleContent(message: message),
                           if (approval != null) ...[
@@ -142,6 +167,20 @@ class _MessageBubbleState extends State<MessageBubble> {
               if (message.interrupted && !message.streaming) ...[
                 const SizedBox(height: NexusSpacing.xs),
                 const _StoppedMarker(),
+              ],
+              if (!_isUser && message.artifacts.isNotEmpty) ...[
+                const SizedBox(height: NexusSpacing.sm),
+                for (final a in message.artifacts) ...[
+                  ArtifactCard(
+                    artifact: a,
+                    onOpen: widget.onOpenArtifact == null ? null : () => widget.onOpenArtifact!(a),
+                  ),
+                  if (a != message.artifacts.last) const SizedBox(height: NexusSpacing.xs),
+                ],
+              ],
+              if (!_isUser && message.audio?.isPlayable == true && widget.onPlayAudio != null) ...[
+                const SizedBox(height: NexusSpacing.xs),
+                _ListenChip(playing: widget.playingAudio, onTap: widget.onPlayAudio!),
               ],
               if (message.citations.isNotEmpty) ...[
                 const SizedBox(height: NexusSpacing.sm),
@@ -371,6 +410,53 @@ class _InlineEditorState extends State<_InlineEditor> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// "Play reply" / "Stop" pill under a reply that has a spoken version.
+class _ListenChip extends StatelessWidget {
+  const _ListenChip({required this.playing, required this.onTap});
+  final bool playing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: const BorderRadius.all(NexusRadius.pill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: playing ? NexusColors.crimson.withValues(alpha: 0.12) : t.surfaceHigh,
+            borderRadius: const BorderRadius.all(NexusRadius.pill),
+            border: Border.all(color: playing ? NexusColors.crimson : t.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                playing ? Icons.stop_rounded : Icons.volume_up_rounded,
+                size: 14,
+                color: NexusColors.crimson,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                playing ? 'Stop' : 'Play reply',
+                style: TextStyle(
+                  color: t.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -732,10 +818,42 @@ class Composer extends StatefulWidget {
     this.knowledgeLabel,
     this.onPickKnowledge,
     this.modelChip,
+    this.attachments = const [],
+    this.uploading = 0,
+    this.onAttach,
+    this.onRemoveAttachment,
+    this.canAttachImages = true,
+    this.imageAttachHint,
+    this.voiceButton,
+    this.speakReplies,
+    this.onToggleSpeak,
   });
 
   final void Function(String) onSend;
   final bool sending;
+
+  /// Uploads waiting to go out with the next message.
+  final List<Attachment> attachments;
+
+  /// Uploads in flight (a spinner chip is shown while > 0).
+  final int uploading;
+
+  /// Opens the picker for the chosen source; null hides the attach button.
+  final ValueChanged<AttachmentSource>? onAttach;
+  final ValueChanged<Attachment>? onRemoveAttachment;
+
+  /// False when the effective model cannot read images: the photo entries
+  /// of the attach menu are disabled and [imageAttachHint] explains why.
+  final bool canAttachImages;
+  final String? imageAttachHint;
+
+  /// Push-to-talk button (built by the screen when the server has
+  /// speech-to-text); null hides it.
+  final Widget? voiceButton;
+
+  /// "Speak" chip state; null hides the chip (no text-to-speech).
+  final bool? speakReplies;
+  final ValueChanged<bool>? onToggleSpeak;
 
   /// False while sending is not allowed (the workspace budget is spent):
   /// the field and the send button are disabled and [disabledHint] shown.
@@ -801,11 +919,24 @@ class _ComposerState extends State<Composer> {
     _focus.requestFocus();
   }
 
+  /// The camera entry only makes sense on a phone / tablet.
+  static bool get _hasCamera =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  String get _hint {
+    if (!widget.enabled) return widget.disabledHint ?? 'Sending is paused';
+    if (widget.attachments.isNotEmpty) return 'Add a message about your attachment…';
+    return 'Message NexusBot…';
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final toolsLabel =
         widget.useTools && widget.toolsSummary != null ? 'Tools · ${widget.toolsSummary}' : 'Tools';
+    final hasAttachments = widget.attachments.isNotEmpty || widget.uploading > 0;
     return SafeArea(
       top: false,
       child: Container(
@@ -857,6 +988,17 @@ class _ComposerState extends State<Composer> {
                               onTap: widget.onPickKnowledge,
                             ),
                           ],
+                          if (widget.speakReplies != null) ...[
+                            const SizedBox(width: NexusSpacing.sm),
+                            ComposerChip(
+                              label: 'Speak',
+                              active: widget.speakReplies!,
+                              icon: Icons.volume_up_rounded,
+                              onTap: widget.onToggleSpeak == null
+                                  ? null
+                                  : () => widget.onToggleSpeak!(!widget.speakReplies!),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -878,57 +1020,92 @@ class _ComposerState extends State<Composer> {
                   horizontal: NexusSpacing.md,
                   vertical: NexusSpacing.xs,
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focus,
-                        enabled: widget.enabled,
-                        minLines: 1,
-                        maxLines: 6,
-                        textInputAction: TextInputAction.newline,
-                        decoration: InputDecoration(
-                          hintText: widget.enabled
-                              ? 'Message NexusBot…'
-                              : (widget.disabledHint ?? 'Sending is paused'),
-                          border: InputBorder.none,
-                          filled: false,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    if (hasAttachments)
+                      Padding(
+                        padding: const EdgeInsets.only(top: NexusSpacing.sm),
+                        child: Wrap(
+                          spacing: NexusSpacing.sm,
+                          runSpacing: NexusSpacing.sm,
+                          children: [
+                            for (final a in widget.attachments)
+                              PendingAttachmentChip(
+                                key: ValueKey('pending-${a.id}'),
+                                attachment: a,
+                                onRemove: widget.onRemoveAttachment == null || widget.sending
+                                    ? null
+                                    : () => widget.onRemoveAttachment!(a),
+                              ),
+                            if (widget.uploading > 0) const _UploadingChip(),
+                          ],
                         ),
                       ),
-                    ),
-                    if (widget.onSendBackground != null) ...[
-                      const SizedBox(width: 2),
-                      PopupMenuButton<String>(
-                        tooltip: 'More',
-                        enabled: widget.enabled && !widget.sending,
-                        icon: Icon(Icons.more_vert_rounded, size: 18, color: t.textMuted),
-                        onSelected: (v) {
-                          if (v == 'background') _sendBackground();
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: 'background',
-                            child: Row(
-                              children: [
-                                Icon(Icons.cloud_sync_outlined, size: 16),
-                                SizedBox(width: NexusSpacing.sm),
-                                Text('Send in background'),
-                              ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (widget.onAttach != null)
+                          _AttachMenuButton(
+                            enabled: widget.enabled && !widget.sending,
+                            canAttachImages: widget.canAttachImages,
+                            imageAttachHint: widget.imageAttachHint,
+                            showCamera: _hasCamera,
+                            onSelected: widget.onAttach!,
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            focusNode: _focus,
+                            enabled: widget.enabled,
+                            minLines: 1,
+                            maxLines: 6,
+                            textInputAction: TextInputAction.newline,
+                            decoration: InputDecoration(
+                              hintText: _hint,
+                              border: InputBorder.none,
+                              filled: false,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                           ),
+                        ),
+                        if (widget.voiceButton != null) ...[
+                          const SizedBox(width: 4),
+                          widget.voiceButton!,
                         ],
-                      ),
-                    ],
-                    const SizedBox(width: 4),
-                    _SendOrStop(
-                      sending: widget.sending,
-                      stopping: widget.stopping,
-                      enabled: widget.enabled,
-                      onSend: _send,
-                      onStop: widget.onStop,
+                        if (widget.onSendBackground != null) ...[
+                          const SizedBox(width: 2),
+                          PopupMenuButton<String>(
+                            tooltip: 'More',
+                            enabled: widget.enabled && !widget.sending,
+                            icon: Icon(Icons.more_vert_rounded, size: 18, color: t.textMuted),
+                            onSelected: (v) {
+                              if (v == 'background') _sendBackground();
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'background',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.cloud_sync_outlined, size: 16),
+                                    SizedBox(width: NexusSpacing.sm),
+                                    Text('Send in background'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(width: 4),
+                        _SendOrStop(
+                          sending: widget.sending,
+                          stopping: widget.stopping,
+                          enabled: widget.enabled,
+                          onSend: _send,
+                          onStop: widget.onStop,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -936,6 +1113,127 @@ class _ComposerState extends State<Composer> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Paper-clip menu: photo library / camera (disabled with a hint when the
+/// model cannot see images) and files.
+class _AttachMenuButton extends StatelessWidget {
+  const _AttachMenuButton({
+    required this.enabled,
+    required this.canAttachImages,
+    required this.imageAttachHint,
+    required this.showCamera,
+    required this.onSelected,
+  });
+
+  final bool enabled;
+  final bool canAttachImages;
+  final String? imageAttachHint;
+  final bool showCamera;
+  final ValueChanged<AttachmentSource> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final hint = imageAttachHint ?? 'The selected model cannot read images';
+    return PopupMenuButton<AttachmentSource>(
+      tooltip: 'Attach',
+      enabled: enabled,
+      icon: Icon(
+        Icons.attach_file_rounded,
+        size: 20,
+        color: enabled ? t.textSecondary : t.textMuted,
+      ),
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: AttachmentSource.gallery,
+          enabled: canAttachImages,
+          child: _AttachMenuRow(
+            icon: Icons.photo_library_outlined,
+            label: 'Photo library',
+            subtitle: canAttachImages ? null : hint,
+          ),
+        ),
+        if (showCamera)
+          PopupMenuItem(
+            value: AttachmentSource.camera,
+            enabled: canAttachImages,
+            child: _AttachMenuRow(
+              icon: Icons.photo_camera_outlined,
+              label: 'Take photo',
+              subtitle: canAttachImages ? null : hint,
+            ),
+          ),
+        const PopupMenuItem(
+          value: AttachmentSource.file,
+          child: _AttachMenuRow(
+            icon: Icons.upload_file_outlined,
+            label: 'File',
+            subtitle: 'PDF, Word, text, CSV, JSON or an audio clip',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttachMenuRow extends StatelessWidget {
+  const _AttachMenuRow({required this.icon, required this.label, this.subtitle});
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: NexusSpacing.sm),
+        Flexible(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label),
+              if (subtitle != null)
+                Text(subtitle!, style: TextStyle(color: t.textMuted, fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UploadingChip extends StatelessWidget {
+  const _UploadingChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: t.surfaceHigher,
+        borderRadius: const BorderRadius.all(NexusRadius.md),
+        border: Border.all(color: t.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 1.5, color: t.textMuted),
+          ),
+          const SizedBox(width: NexusSpacing.sm),
+          Text('Uploading…', style: TextStyle(color: t.textMuted, fontSize: 12)),
+        ],
       ),
     );
   }

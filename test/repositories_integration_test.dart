@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexusbot/core/api_client.dart';
@@ -7,38 +8,72 @@ import 'package:nexusbot/core/preferences.dart';
 import 'package:nexusbot/features/admin/admin_repository.dart';
 import 'package:nexusbot/features/assistants/assistant_model.dart';
 import 'package:nexusbot/features/assistants/assistants_repository.dart';
+import 'package:nexusbot/features/attachments/attachments_repository.dart';
 import 'package:nexusbot/features/auth/auth_repository.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
 import 'package:nexusbot/features/chat/chat_repository.dart';
 import 'package:nexusbot/features/collections/collections_repository.dart';
 import 'package:nexusbot/features/documents/documents_repository.dart';
+import 'package:nexusbot/features/mcp/mcp_model.dart';
+import 'package:nexusbot/features/mcp/mcp_repository.dart';
 import 'package:nexusbot/features/memory/memory_model.dart';
 import 'package:nexusbot/features/memory/memory_repository.dart';
 import 'package:nexusbot/features/models/model_info.dart';
 import 'package:nexusbot/features/models/models_repository.dart';
 import 'package:nexusbot/features/orgs/org_model.dart';
 import 'package:nexusbot/features/orgs/orgs_repository.dart';
+import 'package:nexusbot/features/push/devices_repository.dart';
+import 'package:nexusbot/features/share/share_model.dart';
+import 'package:nexusbot/features/share/share_repository.dart';
 import 'package:nexusbot/features/tools/tools_repository.dart';
 import 'package:nexusbot/features/usage/usage_model.dart';
 import 'package:nexusbot/features/usage/usage_repository.dart';
+import 'package:nexusbot/features/voice/voice_repository.dart';
 
 import 'helpers/fakes.dart';
+
+/// Splits a `multipart/form-data` body into its text fields and files
+/// (`{fields: {name: value}, files: {name: {filename, size, content}}}`).
+/// Latin-1 keeps every byte intact, so sizes are exact.
+Map<String, Object?> parseMultipart(List<int> bytes, String boundary) {
+  final text = latin1.decode(bytes);
+  final fields = <String, String>{};
+  final files = <String, Map<String, Object?>>{};
+  for (final part in text.split('--$boundary')) {
+    final trimmed = part.trim();
+    if (trimmed.isEmpty || trimmed == '--') continue;
+    final sep = part.indexOf('\r\n\r\n');
+    if (sep < 0) continue;
+    final headers = part.substring(0, sep);
+    var content = part.substring(sep + 4);
+    if (content.endsWith('\r\n')) content = content.substring(0, content.length - 2);
+    final name = RegExp(r'name="([^"]*)"').firstMatch(headers)?.group(1) ?? '';
+    final filename = RegExp(r'filename="([^"]*)"').firstMatch(headers)?.group(1);
+    if (filename != null) {
+      files[name] = {'filename': filename, 'size': content.length, 'content': content};
+    } else {
+      fields[name] = content;
+    }
+  }
+  return {'fields': fields, 'files': files};
+}
 
 /// Drives the repositories against a loopback HTTP server speaking the
 /// backend contract: Phase 2 (`/models`, `/tools`, `/collections`, the
 /// document chunk viewer and collection filter, `/documents/from-url`,
-/// approvals, `/search`, `PATCH /auth/me {default_model}`) and Phase 3
+/// approvals, `/search`, `PATCH /auth/me {default_model}`), Phase 3
 /// (organizations and members with the `X-Org-Id` header, usage and the
 /// `quota_exceeded` 429, assistants, feedback, memories, siblings / branch,
 /// generation event replay with `id:` lines, background sends and the
-/// `Idempotency-Key` header).
+/// `Idempotency-Key` header) and Phase 4 (attachments incl. the 307 to
+/// presigned storage, voice, MCP servers, export, share links, devices).
 void main() {
   late HttpServer server;
   late ApiClient client;
   const access = 'access-ok';
 
   /// Every request the server saw: method, path, query, decoded JSON body
-  /// and (lower-cased) headers.
+  /// (or the parsed multipart form) and (lower-cased) headers.
   final seen = <({
     String method,
     String path,
@@ -46,6 +81,53 @@ void main() {
     Object? body,
     Map<String, String> headers,
   })>[];
+
+  final pngBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3]);
+
+  Map<String, dynamic> attachment(
+    String id, {
+    String kind = 'image',
+    String name = 'chart.png',
+    String mime = 'image/png',
+    int size = 11,
+    bool hasText = false,
+    String? textExcerpt,
+    String? messageId,
+  }) =>
+      {
+        'id': id,
+        'session_id': 's1',
+        'message_id': messageId,
+        'kind': kind,
+        'name': name,
+        'mime_type': mime,
+        'size_bytes': size,
+        'width': kind == 'image' ? 1200 : null,
+        'height': kind == 'image' ? 800 : null,
+        'url': '/api/v1/sessions/s1/attachments/$id/content',
+        'description': null,
+        'has_text': hasText,
+        'text_excerpt': textExcerpt,
+        'created_at': '2026-01-01T00:00:00Z',
+      };
+
+  Map<String, dynamic> mcpServer(String id, String name, {bool enabled = true}) => {
+        'id': id,
+        'org_id': 'o1',
+        'name': name,
+        'description': 'GitHub tools',
+        'transport': 'http',
+        'command': null,
+        'args': [],
+        'env_keys': [],
+        'url': 'https://mcp.example.com/github',
+        'header_keys': ['Authorization'],
+        'enabled': enabled,
+        'requires_approval': true,
+        'created_by': 'u1',
+        'created_at': '2026-01-01T00:00:00Z',
+        'updated_at': '2026-01-01T00:00:00Z',
+      };
 
   Future<void> json(HttpResponse res, Object? body, {int status = 200}) async {
     res.statusCode = status;
@@ -247,12 +329,33 @@ void main() {
 
   Future<void> handle(HttpRequest req) async {
     final res = req.response;
+    // Presigned storage links authenticate themselves: a bearer arriving here
+    // means the client forwarded it across the redirect, which must not happen.
+    if (req.uri.path.startsWith('/presigned/')) {
+      await req.drain<void>();
+      if (req.headers.value('authorization') != null || req.headers.value('x-org-id') != null) {
+        await envelope(res, 400, 'bad_request', 'API headers forwarded to storage');
+        return;
+      }
+      res.headers.contentType = ContentType('image', 'png');
+      res.add(pngBytes);
+      await res.close();
+      return;
+    }
     if (req.headers.value('authorization') != 'Bearer $access') {
       await envelope(res, 401, 'unauthorized', 'bad token');
       return;
     }
-    final raw = await utf8.decodeStream(req);
-    final body = raw.isEmpty ? null : jsonDecode(raw);
+    final bytes = await req.fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+    final contentType = req.headers.contentType;
+    final Object? body;
+    if (bytes.isEmpty) {
+      body = null;
+    } else if (contentType?.mimeType == 'multipart/form-data') {
+      body = parseMultipart(bytes, contentType!.parameters['boundary']!);
+    } else {
+      body = jsonDecode(utf8.decode(bytes));
+    }
     final headers = <String, String>{};
     req.headers.forEach((name, values) => headers[name.toLowerCase()] = values.join(','));
     seen.add(
@@ -301,10 +404,285 @@ void main() {
       case ('GET', '/tools'):
         await json(res, {
           'items': [
-            {'name': 'calculator', 'description': 'Math', 'requires_approval': false},
+            {
+              'name': 'calculator',
+              'description': 'Math',
+              'requires_approval': false,
+              'source': 'builtin',
+            },
             {'name': 'web_search', 'description': 'Web', 'requires_approval': true},
+            {
+              'name': 'mcp:github:search_issues',
+              'description': 'Find issues',
+              'requires_approval': true,
+              'source': 'mcp:github',
+            },
           ],
         });
+
+      // ── Attachments ──
+      case ('POST', '/sessions/s1/attachments'):
+        final file = ((body as Map)['files'] as Map)['file'] as Map;
+        final name = file['filename'] as String;
+        if (name.endsWith('.exe')) {
+          await envelope(
+            res,
+            422,
+            'validation_error',
+            'File type not allowed',
+            details: {
+              'allowed_extensions': ['pdf', 'txt'],
+            },
+          );
+          return;
+        }
+        await json(
+          res,
+          attachment(
+            'a-new',
+            kind: name.endsWith('.png') ? 'image' : 'file',
+            name: name,
+            mime: name.endsWith('.png') ? 'image/png' : 'text/plain',
+            size: file['size'] as int,
+            hasText: !name.endsWith('.png'),
+            textExcerpt: name.endsWith('.png') ? null : 'hello',
+          ),
+          status: 201,
+        );
+      case ('GET', '/sessions/s1/attachments'):
+        await json(res, {
+          'items': [
+            attachment('a1', messageId: 'u1'),
+            attachment('a2', kind: 'audio', name: 'voice.m4a', mime: 'audio/mp4', hasText: true),
+          ],
+        });
+      case ('GET', '/sessions/s1/attachments/a1'):
+        await json(res, attachment('a1', messageId: 'u1', textExcerpt: null));
+      case ('DELETE', '/sessions/s1/attachments/a1'):
+        await json(res, {'ok': true, 'message': 'Attachment deleted'});
+      case ('GET', '/api/v1/sessions/s1/attachments/a1/content'):
+        res.headers.contentType = ContentType('image', 'png');
+        res.headers.set('content-disposition', 'inline; filename="chart.png"');
+        res.add(pngBytes);
+        await res.close();
+      case ('GET', '/api/v1/sessions/s1/attachments/a2/content'):
+        res.statusCode = 307;
+        res.headers.set('location', 'http://127.0.0.1:${server.port}/presigned/a2?sig=abc');
+        await res.close();
+      case ('GET', '/api/v1/sessions/s1/attachments/missing/content'):
+        await envelope(res, 404, 'not_found', 'Attachment not found');
+
+      // ── Voice ──
+      case ('GET', '/audio/voices'):
+        await json(res, {
+          'provider': 'openai',
+          'stt_available': true,
+          'tts_available': true,
+          'default_voice': 'alloy',
+          'default_format': 'mp3',
+          'voices': [
+            {'id': 'alloy', 'name': 'Alloy'},
+            {'id': 'nova', 'name': 'Nova'},
+          ],
+        });
+      case ('POST', '/audio/transcriptions'):
+        final form = body as Map;
+        final file = (form['files'] as Map)['file'] as Map;
+        await json(res, {
+          'text': 'hello from ${file['filename']}',
+          'language': (form['fields'] as Map)['language'] ?? 'en',
+          'duration_seconds': 1.5,
+          'provider': 'openai',
+        });
+      case ('POST', '/audio/speech'):
+        final b = body as Map<String, dynamic>;
+        if (b['voice'] == 'ghost') {
+          await envelope(res, 422, 'validation_error', "Unknown voice 'ghost'");
+          return;
+        }
+        res.headers.contentType = ContentType('audio', 'mpeg');
+        res.headers.set('content-disposition', 'inline; filename="speech.mp3"');
+        res.add([0xFF, 0xFB, 0x90, 0x00]);
+        await res.close();
+      case ('POST', '/sessions/s1/messages/voice'):
+        final form = body as Map;
+        final file = (form['files'] as Map)['file'] as Map;
+        await json(
+          res,
+          {
+            'generation_id': 'g-voice',
+            'transcript': 'what is the weather (${file['size']} bytes)',
+            'user_message_id': 'u-voice',
+            'attachment_id': 'a-voice',
+          },
+          status: 202,
+        );
+      case ('POST', '/sessions/s-novoice/messages/voice'):
+        await envelope(
+          res,
+          503,
+          'service_unavailable',
+          'Speech-to-text is not configured',
+          details: {'code': 'voice_unavailable'},
+        );
+
+      // ── MCP servers ──
+      case ('GET', '/mcp/servers'):
+        if (req.headers.value('x-org-id') != 'o1') {
+          await envelope(res, 403, 'forbidden', 'Not a member of this organization');
+          return;
+        }
+        await json(res, {
+          'items': [mcpServer('m1', 'github'), mcpServer('m2', 'broken', enabled: false)],
+        });
+      case ('POST', '/mcp/servers'):
+        final b = body as Map<String, dynamic>;
+        if (b['name'] == 'github') {
+          await envelope(res, 409, 'conflict', 'An MCP server with this name already exists');
+          return;
+        }
+        if (b['transport'] == 'stdio') {
+          await envelope(res, 403, 'forbidden', 'Only server administrators can register stdio');
+          return;
+        }
+        final created = mcpServer('m-new', b['name'] as String);
+        created['url'] = b['url'];
+        created['header_keys'] = ((b['headers'] as Map?) ?? {}).keys.toList();
+        created['requires_approval'] = b['requires_approval'];
+        await json(res, created, status: 201);
+      case ('GET', '/mcp/servers/m1'):
+        await json(res, mcpServer('m1', 'github'));
+      case ('PATCH', '/mcp/servers/m1'):
+        final b = body as Map<String, dynamic>;
+        final updated = mcpServer('m1', 'github', enabled: (b['enabled'] as bool?) ?? true);
+        if (b.containsKey('requires_approval')) {
+          updated['requires_approval'] = b['requires_approval'];
+        }
+        if (b.containsKey('description')) updated['description'] = b['description'];
+        await json(res, updated);
+      case ('DELETE', '/mcp/servers/m1'):
+        await json(res, {'ok': true, 'message': 'MCP server removed'});
+      case ('POST', '/mcp/servers/m1/test'):
+        await json(res, {
+          'ok': true,
+          'tools': [
+            {
+              'name': 'mcp:github:search_issues',
+              'server': 'github',
+              'tool': 'search_issues',
+              'description': 'Find issues',
+              'input_schema': {
+                'type': 'object',
+                'properties': {
+                  'q': {'type': 'string'},
+                },
+              },
+              'requires_approval': true,
+            },
+          ],
+          'error': null,
+          'latency_ms': 42,
+        });
+      case ('POST', '/mcp/servers/m2/test'):
+        await json(res, {'ok': false, 'tools': [], 'error': 'connection refused', 'latency_ms': 7});
+      case ('GET', '/mcp/servers/m1/tools'):
+        await json(res, [
+          {
+            'name': 'mcp:github:search_issues',
+            'server': 'github',
+            'tool': 'search_issues',
+            'description': 'Find issues',
+            'input_schema': {},
+            'requires_approval': true,
+          },
+        ]);
+
+      // ── Export & share ──
+      case ('GET', '/sessions/s1/export'):
+        final format = req.uri.queryParameters['format'] ?? 'markdown';
+        if (format == 'json') {
+          res.headers.contentType = ContentType.json;
+          res.headers.set('content-disposition', 'attachment; filename="invoices.json"');
+          res.write(
+            jsonEncode({
+              'session': {'title': 'Invoices'},
+              'messages': [],
+            }),
+          );
+        } else {
+          res.headers.contentType = ContentType('text', 'markdown', charset: 'utf-8');
+          res.headers.set('content-disposition', 'attachment; filename="invoices.md"');
+          res.write('# Invoices\n\n**User:** hi\n');
+        }
+        await res.close();
+      case ('GET', '/sessions/s-missing/export'):
+        await envelope(res, 404, 'not_found', 'Session not found');
+      case ('POST', '/sessions/s1/share'):
+        final b = body as Map<String, dynamic>?;
+        await json(
+          res,
+          {
+            'id': 'sh-new',
+            'token': 'tok-secret',
+            'url': '/api/v1/shared/tok-secret',
+            'expires_at': '2026-11-09T00:00:00+00:00',
+            'views': 0,
+            'hours': b?['expires_in_hours'],
+          },
+          status: 201,
+        );
+      case ('GET', '/sessions/s1/share'):
+        await json(res, {
+          'items': [
+            {
+              'id': 'sh-1',
+              'token': null,
+              'url': null,
+              'expires_at': '2026-11-09T00:00:00+00:00',
+              'views': 3,
+            },
+          ],
+        });
+      case ('DELETE', '/sessions/s1/share'):
+        final one = req.uri.queryParameters['share_id'] != null;
+        await json(res, {'ok': true, 'message': 'Revoked ${one ? 1 : 2} link(s)'});
+
+      // ── Devices ──
+      case ('POST', '/devices'):
+        final b = body as Map<String, dynamic>;
+        final token = b['token'] as String;
+        await json(
+          res,
+          {
+            'id': 'd1',
+            'platform': b['platform'],
+            'token_suffix': token.substring(token.length - 6),
+            'app_version': b['app_version'],
+            'locale': b['locale'],
+            'last_seen_at': '2026-11-02T00:00:00+00:00',
+            'created_at': '2026-11-02T00:00:00+00:00',
+          },
+          status: 201,
+        );
+      case ('GET', '/devices'):
+        await json(res, {
+          'items': [
+            {
+              'id': 'd1',
+              'platform': 'android',
+              'token_suffix': 'abcdef',
+              'app_version': '1.0.0',
+              'locale': 'en-GB',
+              'last_seen_at': null,
+              'created_at': '2026-11-02T00:00:00+00:00',
+            },
+          ],
+          'push_enabled': true,
+        });
+      case ('DELETE', '/devices/fcm-token-abcdef'):
+        await json(res, {'ok': true, 'message': 'Device removed'});
+      case ('DELETE', '/devices/unknown'):
+        await envelope(res, 404, 'not_found', 'Device not found');
 
       case ('POST', '/collections'):
         final b = body as Map<String, dynamic>;
@@ -869,11 +1247,16 @@ void main() {
     expect(catalog.labelFor('nope'), 'nope');
   });
 
-  test('tools: GET /tools → list; default selection skips approval tools', () async {
+  test('tools: GET /tools → list with sources; default selection skips approval tools', () async {
     final tools = await ToolsRepository(client).list();
-    expect(tools.map((t) => t.name), ['calculator', 'web_search']);
-    expect(tools.last.requiresApproval, isTrue);
+    expect(tools.map((t) => t.name), ['calculator', 'web_search', 'mcp:github:search_issues']);
+    expect(tools[1].requiresApproval, isTrue);
+    expect(tools[1].source, 'builtin', reason: 'older rows without a source are built-ins');
+    expect(tools.last.source, 'mcp:github');
+    expect(tools.last.serverName, 'github');
+    expect(tools.last.shortName, 'search_issues');
     expect(defaultToolSelection(tools), ['calculator']);
+    expect(groupToolsBySource(tools).map((g) => g.label), ['Built-in', 'github']);
   });
 
   test('collections: create, list (paged), get, update, delete', () async {
@@ -1527,6 +1910,498 @@ void main() {
     test('sends without a key carry no Idempotency-Key header', () async {
       await ChatRepository(client).sendBlocking(sessionId: 's1', content: 'x');
       expect(seen.last.headers.containsKey('idempotency-key'), isFalse);
+    });
+  });
+
+  // ── Phase 4 ───────────────────────────────────────────────────────────
+
+  group('attachments', () {
+    test('upload is multipart; the 201 carries the sniffed kind and text excerpt', () async {
+      final repo = AttachmentsRepository(client);
+      final progress = <double>[];
+      final att = await repo.upload(
+        sessionId: 's1',
+        bytes: Uint8List.fromList(utf8.encode('hello attachment')),
+        filename: 'notes.txt',
+        onProgress: progress.add,
+      );
+      expect(seen.last.headers['content-type'], startsWith('multipart/form-data'));
+      final files = (seen.last.body as Map)['files'] as Map;
+      expect(files['file'], {'filename': 'notes.txt', 'size': 16, 'content': 'hello attachment'});
+      expect(att.id, 'a-new');
+      expect(att.kind, AttachmentKind.file);
+      expect(att.name, 'notes.txt');
+      expect(att.sizeBytes, 16);
+      expect(att.hasText, isTrue);
+      expect(att.textExcerpt, 'hello');
+      expect(att.sessionId, 's1');
+      expect(att.messageId, isNull);
+      expect(att.url, '/api/v1/sessions/s1/attachments/a-new/content');
+      expect(progress, isNotEmpty);
+      expect(progress.last, 1.0);
+
+      final image = await repo.upload(
+        sessionId: 's1',
+        bytes: pngBytes,
+        filename: 'chart.png',
+      );
+      expect(image.kind, AttachmentKind.image);
+      expect(image.width, 1200);
+      expect(image.isRenderableImage, isTrue);
+    });
+
+    test('a refused upload surfaces the 422 envelope; empty / oversized never leave', () async {
+      final repo = AttachmentsRepository(client);
+      try {
+        await repo.upload(sessionId: 's1', bytes: Uint8List.fromList([1]), filename: 'x.exe');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.statusCode, 422);
+        expect(e.message, 'File type not allowed');
+        expect(e.details?['allowed_extensions'], ['pdf', 'txt']);
+      }
+      final before = seen.length;
+      await expectLater(
+        repo.upload(sessionId: 's1', bytes: Uint8List(0), filename: 'empty.txt'),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 422)),
+      );
+      expect(seen.length, before, reason: 'checked client-side');
+    });
+
+    test('list, get and delete', () async {
+      final repo = AttachmentsRepository(client);
+      final all = await repo.list('s1');
+      expect(all.map((a) => a.id), ['a1', 'a2']);
+      expect(all.first.messageId, 'u1');
+      expect(all.last.isAudio, isTrue);
+      expect(all.last.hasText, isTrue);
+      expect((await repo.get('s1', 'a1')).name, 'chart.png');
+      await repo.delete('s1', 'a1');
+      expect(seen.last.method, 'DELETE');
+      expect(seen.last.path, '/sessions/s1/attachments/a1');
+    });
+
+    test('content: served bytes come with the bearer; a 307 is followed without it', () async {
+      final repo = AttachmentsRepository(client);
+      client.activeOrgId = () => 'o1';
+      final direct = await repo.fetchContent('/api/v1/sessions/s1/attachments/a1/content');
+      expect(direct.mimeType, 'image/png');
+      expect(direct.bytes, pngBytes);
+      expect(seen.last.headers['authorization'], 'Bearer $access');
+      expect(seen.last.headers['x-org-id'], 'o1');
+
+      final redirected = await repo.fetchContent('/api/v1/sessions/s1/attachments/a2/content');
+      expect(redirected.mimeType, 'image/png');
+      expect(redirected.bytes, pngBytes, reason: 'fetched from the presigned URL');
+      expect(seen.last.path, '/api/v1/sessions/s1/attachments/a2/content');
+
+      try {
+        await repo.fetchContent('/api/v1/sessions/s1/attachments/missing/content');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.isNotFound, isTrue);
+        expect(e.message, 'Attachment not found');
+      }
+    });
+
+    test('resolveUrl maps server paths onto the API origin', () {
+      final repo = AttachmentsRepository(client);
+      expect(
+        repo.resolveUrl('/api/v1/sessions/s1/attachments/a1/content').toString(),
+        'http://127.0.0.1:${server.port}/api/v1/sessions/s1/attachments/a1/content',
+      );
+      expect(
+        repo.resolveUrl('https://cdn.example.com/x?sig=1').toString(),
+        'https://cdn.example.com/x?sig=1',
+      );
+      expect(
+        AttachmentsRepository.resolveAgainst('https://api.example.com/api/v1', '/api/v1/a')
+            .toString(),
+        'https://api.example.com/api/v1/a',
+      );
+      expect(
+        AttachmentsRepository.resolveAgainst('https://api.example.com/api/v1', 'rel/x').toString(),
+        'https://api.example.com/api/v1/rel/x',
+      );
+    });
+
+    test('the content loader caches by URL and drops failures', () async {
+      final repo = AttachmentsRepository(client);
+      final loader = CachingAttachmentContentLoader(Future.value(repo), maxEntries: 2);
+      final before = seen.length;
+      await loader.load('/api/v1/sessions/s1/attachments/a1/content');
+      await loader.load('/api/v1/sessions/s1/attachments/a1/content');
+      expect(seen.length, before + 1, reason: 'second load served from memory');
+      await expectLater(
+        loader.load('/api/v1/sessions/s1/attachments/missing/content'),
+        throwsA(isA<ApiException>()),
+      );
+      await expectLater(
+        loader.load('/api/v1/sessions/s1/attachments/missing/content'),
+        throwsA(isA<ApiException>()),
+      );
+      expect(seen.length, before + 3, reason: 'a failure is fetched again');
+    });
+  });
+
+  group('voice', () {
+    test('GET /audio/voices → capabilities', () async {
+      final caps = await VoiceRepository(client).capabilities();
+      expect(caps.provider, 'openai');
+      expect(caps.sttAvailable, isTrue);
+      expect(caps.ttsAvailable, isTrue);
+      expect(caps.any, isTrue);
+      expect(caps.defaultVoice, 'alloy');
+      expect(caps.defaultFormat, 'mp3');
+      expect(caps.voices.map((v) => v.name), ['Alloy', 'Nova']);
+      expect(caps.labelFor('nova'), 'Nova');
+      expect(caps.labelFor(null), 'Server default');
+      expect(caps.labelFor('ghost'), 'ghost');
+    });
+
+    test('transcription is multipart with an optional language', () async {
+      final t = await VoiceRepository(client).transcribe(
+        bytes: Uint8List.fromList([1, 2, 3, 4]),
+        filename: 'voice.m4a',
+        language: 'en',
+      );
+      final form = seen.last.body as Map;
+      expect((form['files'] as Map)['file']['filename'], 'voice.m4a');
+      expect((form['files'] as Map)['file']['size'], 4);
+      expect((form['fields'] as Map)['language'], 'en');
+      expect(t.text, 'hello from voice.m4a');
+      expect(t.language, 'en');
+      expect(t.durationSeconds, 1.5);
+      expect(t.provider, 'openai');
+    });
+
+    test('speech streams audio bytes; an unknown voice is a 422', () async {
+      final repo = VoiceRepository(client);
+      final audio = await repo.speech(text: 'Hello', voice: 'nova', format: 'mp3');
+      expect(seen.last.body, {'text': 'Hello', 'voice': 'nova', 'format': 'mp3'});
+      expect(audio.mimeType, 'audio/mpeg');
+      expect(audio.bytes, [0xFF, 0xFB, 0x90, 0x00]);
+      try {
+        await repo.speech(text: 'Boo', voice: 'ghost');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.statusCode, 422);
+      }
+    });
+
+    test('a voice turn is a multipart 202 with the form fields and the Idempotency-Key', () async {
+      final turn = await VoiceRepository(client).sendVoiceTurn(
+        sessionId: 's1',
+        bytes: Uint8List.fromList(List.filled(10, 1)),
+        filename: 'voice.wav',
+        useTools: false,
+        model: 'gpt-4o-mini',
+        voice: 'alloy',
+        audioFormat: 'wav',
+        idempotencyKey: 'key-voice',
+      );
+      expect(seen.last.headers['idempotency-key'], 'key-voice');
+      final form = seen.last.body as Map;
+      expect((form['files'] as Map)['file']['size'], 10);
+      expect(form['fields'], {
+        'use_rag': 'true',
+        'use_tools': 'false',
+        'reply_audio': 'true',
+        'model': 'gpt-4o-mini',
+        'voice': 'alloy',
+        'audio_format': 'wav',
+      });
+      expect(turn.generationId, 'g-voice');
+      expect(turn.transcript, 'what is the weather (10 bytes)');
+      expect(turn.userMessageId, 'u-voice');
+      expect(turn.attachmentId, 'a-voice');
+
+      try {
+        await VoiceRepository(client).sendVoiceTurn(
+          sessionId: 's-novoice',
+          bytes: Uint8List.fromList([1]),
+          filename: 'voice.wav',
+        );
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.statusCode, 503);
+        expect(e.details?['code'], 'voice_unavailable');
+      }
+    });
+
+    test('sends carry attachment_ids and voice_reply only when set', () async {
+      final repo = ChatRepository(client);
+      await repo.sendBlocking(
+        sessionId: 's1',
+        content: 'look',
+        attachmentIds: ['a1'],
+        voiceReply: const VoiceReply(voice: 'nova', audioFormat: 'wav'),
+      );
+      final body = seen.last.body as Map;
+      expect(body['attachment_ids'], ['a1']);
+      expect(body['voice_reply'], isTrue);
+      expect(body['voice'], 'nova');
+      expect(body['audio_format'], 'wav');
+
+      await repo.sendBlocking(sessionId: 's1', content: 'plain', attachmentIds: const []);
+      final plain = seen.last.body as Map;
+      expect(plain.containsKey('attachment_ids'), isFalse, reason: 'empty list is omitted');
+      expect(plain.containsKey('voice_reply'), isFalse);
+
+      await repo.sendBackground(sessionId: 's1', content: 'bg', attachmentIds: ['a2']);
+      expect((seen.last.body as Map)['attachment_ids'], ['a2']);
+      await repo.editMessage(
+        sessionId: 's1',
+        messageId: 'u1',
+        content: 'edit',
+        attachmentIds: ['a3'],
+        voiceReply: const VoiceReply(),
+      );
+      expect((seen.last.body as Map)['attachment_ids'], ['a3']);
+      expect((seen.last.body as Map)['voice_reply'], isTrue);
+      expect((seen.last.body as Map).containsKey('voice'), isFalse);
+    });
+  });
+
+  group('MCP servers', () {
+    test('every call names the organization through X-Org-Id', () async {
+      final repo = MCPRepository(client);
+      final servers = await repo.list('o1');
+      expect(seen.last.headers['x-org-id'], 'o1');
+      expect(servers.map((s) => s.name), ['github', 'broken']);
+      expect(servers.first.transport, MCPTransport.http);
+      expect(servers.first.url, 'https://mcp.example.com/github');
+      expect(servers.first.headerKeys, ['Authorization']);
+      expect(servers.first.endpointLabel, 'https://mcp.example.com/github');
+      expect(servers.first.requiresApproval, isTrue);
+      expect(servers.last.enabled, isFalse);
+
+      client.activeOrgId = () => 'o-personal';
+      await repo.list('o1');
+      expect(seen.last.headers['x-org-id'], 'o1', reason: 'explicit org wins over the active one');
+      try {
+        await repo.list('o-other');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.isForbidden, isTrue);
+      }
+    });
+
+    test('create (201 / 409 / 403), get, update, delete', () async {
+      final repo = MCPRepository(client);
+      final created = await repo.create(
+        'o1',
+        const MCPServerDraft(
+          name: 'jira',
+          transport: MCPTransport.sse,
+          url: 'https://mcp.example.com/jira',
+          headers: {'Authorization': 'Bearer x'},
+          description: 'Jira',
+          requiresApproval: false,
+        ),
+      );
+      expect(seen.last.body, {
+        'name': 'jira',
+        'transport': 'sse',
+        'description': 'Jira',
+        'url': 'https://mcp.example.com/jira',
+        'headers': {'Authorization': 'Bearer x'},
+        'enabled': true,
+        'requires_approval': false,
+      });
+      expect(created.id, 'm-new');
+      expect(created.name, 'jira');
+      expect(created.headerKeys, ['Authorization']);
+      expect(created.requiresApproval, isFalse);
+
+      final stdio = const MCPServerDraft(
+        name: 'local',
+        transport: MCPTransport.stdio,
+        command: 'npx',
+        args: ['-y', 'server'],
+        env: {'TOKEN': 't'},
+      ).toJson();
+      expect(stdio, {
+        'name': 'local',
+        'transport': 'stdio',
+        'command': 'npx',
+        'args': ['-y', 'server'],
+        'env': {'TOKEN': 't'},
+        'enabled': true,
+        'requires_approval': true,
+      });
+
+      try {
+        await repo.create(
+          'o1',
+          const MCPServerDraft(name: 'github', transport: MCPTransport.http, url: 'https://x'),
+        );
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.isConflict, isTrue);
+      }
+      try {
+        await repo.create(
+          'o1',
+          const MCPServerDraft(name: 'local', transport: MCPTransport.stdio, command: 'npx'),
+        );
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.isForbidden, isTrue);
+      }
+
+      expect((await repo.get('o1', 'm1')).description, 'GitHub tools');
+
+      final disabled = await repo.update('o1', 'm1', enabled: false);
+      expect(seen.last.body, {'enabled': false}, reason: 'only the given fields');
+      expect(disabled.enabled, isFalse);
+      final noApproval = await repo.update('o1', 'm1', requiresApproval: false, description: 'x');
+      expect(seen.last.body, {'description': 'x', 'requires_approval': false});
+      expect(noApproval.requiresApproval, isFalse);
+      expect(noApproval.copyWith(enabled: false).enabled, isFalse);
+
+      await repo.delete('o1', 'm1');
+      expect(seen.last.method, 'DELETE');
+      expect(seen.last.path, '/mcp/servers/m1');
+    });
+
+    test('test connection lists the tools or the error; cached tools endpoint', () async {
+      final repo = MCPRepository(client);
+      final ok = await repo.test('o1', 'm1');
+      expect(seen.last.method, 'POST');
+      expect(ok.ok, isTrue);
+      expect(ok.latencyMs, 42);
+      expect(ok.tools.single.name, 'mcp:github:search_issues');
+      expect(ok.tools.single.tool, 'search_issues');
+      expect(ok.tools.single.server, 'github');
+      expect(ok.tools.single.inputSchema['type'], 'object');
+      expect(ok.tools.single.requiresApproval, isTrue);
+
+      final failed = await repo.test('o1', 'm2');
+      expect(failed.ok, isFalse);
+      expect(failed.error, 'connection refused');
+      expect(failed.tools, isEmpty);
+
+      final tools = await repo.tools('o1', 'm1');
+      expect(tools.single.description, 'Find issues');
+    });
+
+    test('KEY=value parsing for headers and env', () {
+      expect(parseKeyValueLines('A=1\n\nB = two words \nbroken\n=nokey\n'), {
+        'A': '1',
+        'B': 'two words',
+      });
+      expect(MCPTransport.fromString('sse'), MCPTransport.sse);
+      expect(MCPTransport.fromString('weird'), MCPTransport.http);
+      expect(MCPTransport.stdio.isRemote, isFalse);
+    });
+  });
+
+  group('export & share', () {
+    test('export downloads bytes with the server\'s filename and type', () async {
+      final repo = ShareRepository(client);
+      final md = await repo.export('s1');
+      expect(seen.last.query, {'format': 'markdown', 'include_tools': 'true'});
+      expect(md.filename, 'invoices.md');
+      expect(md.mimeType, 'text/markdown');
+      expect(utf8.decode(md.bytes), startsWith('# Invoices'));
+
+      final json = await repo.export('s1', format: ExportFormat.json, includeTools: false);
+      expect(seen.last.query, {'format': 'json', 'include_tools': 'false'});
+      expect(json.filename, 'invoices.json');
+      expect(json.mimeType, 'application/json');
+      expect(jsonDecode(utf8.decode(json.bytes))['session']['title'], 'Invoices');
+
+      try {
+        await repo.export('s-missing');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.statusCode, 404);
+      }
+    });
+
+    test('filename parsing from Content-Disposition', () {
+      expect(ShareRepository.filenameFromDisposition('attachment; filename="chat.md"'), 'chat.md');
+      expect(
+        ShareRepository.filenameFromDisposition('attachment; filename=chat.json'),
+        'chat.json',
+      );
+      expect(
+        ShareRepository.filenameFromDisposition("attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.md"),
+        'résumé.md',
+      );
+      expect(ShareRepository.filenameFromDisposition('inline'), isNull);
+      expect(ShareRepository.filenameFromDisposition(null), isNull);
+    });
+
+    test('share links: create (token once), list, revoke one / all', () async {
+      final repo = ShareRepository(client);
+      final created = await repo.createShare('s1', expiresInHours: 48);
+      expect(seen.last.body, {'expires_in_hours': 48});
+      expect(created.id, 'sh-new');
+      expect(created.token, 'tok-secret');
+      expect(created.url, '/api/v1/shared/tok-secret');
+      expect(
+        repo.resolveShareUrl(created.url!).toString(),
+        'http://127.0.0.1:${server.port}/api/v1/shared/tok-secret',
+      );
+      expect(
+        repo.resolveShareUrl('https://nexus.example/shared/x').toString(),
+        'https://nexus.example/shared/x',
+      );
+      expect(created.expiresAt.toUtc().day, 9);
+      expect(created.views, 0);
+
+      await repo.createShare('s1');
+      expect(seen.last.body, isEmpty, reason: 'server default expiry');
+
+      final links = await repo.listShares('s1');
+      expect(links.single.id, 'sh-1');
+      expect(links.single.token, isNull);
+      expect(links.single.url, isNull);
+      expect(links.single.views, 3);
+
+      await repo.revokeShares('s1', shareId: 'sh-1');
+      expect(seen.last.method, 'DELETE');
+      expect(seen.last.query, {'share_id': 'sh-1'});
+      await repo.revokeShares('s1');
+      expect(seen.last.query, isEmpty);
+    });
+  });
+
+  group('devices', () {
+    test('register (201), list, unregister (200 / 404)', () async {
+      final repo = DevicesRepository(client);
+      final device = await repo.register(
+        platform: 'android',
+        token: 'fcm-token-abcdef',
+        appVersion: '1.0.0',
+        locale: 'en-GB',
+      );
+      expect(seen.last.body, {
+        'platform': 'android',
+        'token': 'fcm-token-abcdef',
+        'app_version': '1.0.0',
+        'locale': 'en-GB',
+      });
+      expect(device.id, 'd1');
+      expect(device.tokenSuffix, 'abcdef');
+      expect(device.lastSeenAt, isNotNull);
+
+      final list = await repo.list();
+      expect(list.pushEnabled, isTrue);
+      expect(list.items.single.platform, 'android');
+      expect(list.items.single.locale, 'en-GB');
+
+      await repo.unregister('fcm-token-abcdef');
+      expect(seen.last.method, 'DELETE');
+      expect(seen.last.path, '/devices/fcm-token-abcdef');
+      try {
+        await repo.unregister('unknown');
+        fail('expected ApiException');
+      } on ApiException catch (e) {
+        expect(e.isNotFound, isTrue);
+      }
     });
   });
 }

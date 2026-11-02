@@ -1,13 +1,19 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/api_exception.dart';
 import '../../core/preferences.dart';
+import '../attachments/attachment_model.dart';
+import '../attachments/attachments_repository.dart';
 import '../tools/tools_repository.dart';
 import '../usage/usage_model.dart';
 import '../usage/usage_repository.dart';
+import '../voice/audio_player_service.dart';
+import '../voice/recorder.dart';
+import '../voice/voice_repository.dart';
 import 'chat_models.dart';
 import 'chat_repository.dart';
 
@@ -25,6 +31,9 @@ class ChatState {
     this.modelOverride,
     this.collectionIds,
     this.toolNames,
+    this.pendingAttachments = const [],
+    this.uploading = 0,
+    this.playingMessageId,
   });
 
   final List<ChatMessage> messages;
@@ -58,6 +67,16 @@ class ChatState {
   /// Null = the default selection, see [ChatController.effectiveToolNames].
   final List<String>? toolNames;
 
+  /// Uploads waiting in the composer; their ids go out as `attachment_ids`
+  /// with the next send and the list is cleared once the turn is accepted.
+  final List<Attachment> pendingAttachments;
+
+  /// Uploads in flight.
+  final int uploading;
+
+  /// The reply whose spoken version is playing (its `meta.audio`).
+  final String? playingMessageId;
+
   ChatState copyWith({
     List<ChatMessage>? messages,
     bool? sending,
@@ -74,6 +93,10 @@ class ChatState {
     bool clearCollectionIds = false,
     List<String>? toolNames,
     bool clearToolNames = false,
+    List<Attachment>? pendingAttachments,
+    int? uploading,
+    String? playingMessageId,
+    bool clearPlaying = false,
   }) =>
       ChatState(
         messages: messages ?? this.messages,
@@ -87,6 +110,9 @@ class ChatState {
         modelOverride: clearModelOverride ? null : (modelOverride ?? this.modelOverride),
         collectionIds: clearCollectionIds ? null : (collectionIds ?? this.collectionIds),
         toolNames: clearToolNames ? null : (toolNames ?? this.toolNames),
+        pendingAttachments: pendingAttachments ?? this.pendingAttachments,
+        uploading: uploading ?? this.uploading,
+        playingMessageId: clearPlaying ? null : (playingMessageId ?? this.playingMessageId),
       );
 
   static const empty = ChatState(messages: [], sending: false);
@@ -133,18 +159,23 @@ class _TurnContext {
     required this.targetId,
     String initialText = '',
     List<ToolCall> tools = const [],
+    List<Attachment> artifacts = const [],
     this.approval,
     this.generationId,
     this.idempotencyKey,
     this.restoreOnFailure,
   })  : buffer = StringBuffer(initialText),
-        tools = List.of(tools);
+        tools = List.of(tools),
+        artifacts = List.of(artifacts);
 
   /// Id of the message the events are applied to (the streaming
   /// placeholder, or the persisted placeholder of an approval continuation).
   final String targetId;
   final StringBuffer buffer;
   List<ToolCall> tools;
+
+  /// Files announced by `artifact` frames so far.
+  List<Attachment> artifacts;
 
   /// Set when this turn continues a paused one; restored on failure so the
   /// user can try again.
@@ -180,6 +211,12 @@ class _TurnContext {
 /// same bubble); a chat that opens while a generation is running attaches to
 /// it; edits stream into a new branch; sibling switches swap the whole
 /// branch; a `quota_exceeded` refusal raises the app-wide quota banner.
+///
+/// Phase 4: uploads wait in [ChatState.pendingAttachments] and go out as
+/// `attachment_ids`; `artifact` frames attach files to the bubble; a voice
+/// turn (`/messages/voice`) is attached like a background send; `audio_chunk`
+/// frames play through the [AudioPlayerService]; a push notification's
+/// generation is attached through [attachToGeneration].
 class ChatController extends StateNotifier<ChatState> {
   ChatController(this._ref, this.sessionId) : super(ChatState.empty) {
     final prefs = _ref.read(prefsProvider);
@@ -188,7 +225,7 @@ class ChatController extends StateNotifier<ChatState> {
       useTools: prefs.toolsByDefault,
       toolNames: _ref.read(sessionPrefsProvider).toolNames(sessionId),
     );
-    unawaited(_load());
+    _initialLoad = _load();
   }
 
   /// After a WebSocket `stop`, how long to wait for the server's final
@@ -197,6 +234,9 @@ class ChatController extends StateNotifier<ChatState> {
 
   static const _staleApprovalMessage =
       'That approval was already resolved or has expired — the chat was refreshed.';
+
+  /// Text of the optimistic bubble while a voice clip is transcribed.
+  static const voicePlaceholderText = '🎤 Voice message…';
 
   static const _uuid = Uuid();
 
@@ -208,6 +248,8 @@ class ChatController extends StateNotifier<ChatState> {
   _TurnContext? _ctx;
   Timer? _stopTimeout;
   bool _stopRequested = false;
+  late final Future<void> _initialLoad;
+  StreamSubscription<bool>? _playerSub;
 
   Future<void> _load() async {
     final ChatRepository repo;
@@ -290,6 +332,47 @@ class ChatController extends StateNotifier<ChatState> {
     }
   }
 
+  /// Attaches to [generationId] — the one a `generation_done` push
+  /// notification names. No-op when the chat is already streaming or the
+  /// reply is in the history; a generation that is gone (404) falls back to
+  /// a history reload.
+  Future<void> attachToGeneration(String generationId) async {
+    await _initialLoad;
+    if (!mounted || state.sending) return;
+    final known = state.messages.any(
+      (m) => m.role == MessageRole.assistant && m.generationId == generationId && !m.streaming,
+    );
+    if (known) return;
+    final placeholder =
+        ChatMessage.streamingPlaceholder(sessionId: sessionId).copyWith(generationId: generationId);
+    _stopRequested = false;
+    state = state.copyWith(
+      sending: true,
+      stopping: false,
+      clearError: true,
+      messages: [...state.messages, placeholder],
+    );
+    try {
+      final repo = await _ref.read(chatRepositoryProvider.future);
+      final turn = await repo.resumeGeneration(sessionId, generationId);
+      if (!mounted) {
+        await turn.close();
+        return;
+      }
+      _listen(turn, _TurnContext(targetId: placeholder.id, generationId: generationId));
+    } catch (e) {
+      if (!mounted) return;
+      _dropEmptyStreaming(placeholder.id);
+      if (e is ApiException && e.isNotFound) {
+        // Expired replay: the persisted reply is in the history by now.
+        state = state.copyWith(sending: false, stopping: false);
+        await reload();
+        return;
+      }
+      _failTurn(e);
+    }
+  }
+
   /// Re-fetches history, session and pending approvals (drops any in-flight turn).
   Future<void> reload() async {
     await _closeTurn();
@@ -301,6 +384,91 @@ class ChatController extends StateNotifier<ChatState> {
 
   void toggleRag(bool v) => state = state.copyWith(useRag: v);
   void toggleTools(bool v) => state = state.copyWith(useTools: v);
+
+  // ---- Attachments ----
+
+  /// Uploads [bytes] to this session (`POST /sessions/{id}/attachments`) and
+  /// parks the result in the composer. Returns the attachment, or null when
+  /// the upload was refused (the error is shown in the chat).
+  Future<Attachment?> attachFile({required Uint8List bytes, required String filename}) async {
+    state = state.copyWith(uploading: state.uploading + 1, clearError: true);
+    try {
+      final repo = await _ref.read(attachmentsRepositoryProvider.future);
+      final attachment = await repo.upload(sessionId: sessionId, bytes: bytes, filename: filename);
+      if (!mounted) return null;
+      state = state.copyWith(pendingAttachments: [...state.pendingAttachments, attachment]);
+      return attachment;
+    } catch (e) {
+      if (!mounted) return null;
+      state = state.copyWith(error: errorText(e));
+      return null;
+    } finally {
+      if (mounted) state = state.copyWith(uploading: state.uploading - 1);
+    }
+  }
+
+  /// Drops a pending attachment from the composer and deletes it server-side
+  /// (best effort — an unbound upload is garbage either way).
+  Future<void> removeAttachment(String attachmentId) async {
+    state = state.copyWith(
+      pendingAttachments: state.pendingAttachments.where((a) => a.id != attachmentId).toList(),
+    );
+    try {
+      final repo = await _ref.read(attachmentsRepositoryProvider.future);
+      await repo.delete(sessionId, attachmentId);
+    } catch (_) {
+      // Already gone or unreachable; nothing to show.
+    }
+  }
+
+  /// Whether the composer holds images (they need a vision model).
+  bool get hasPendingImages => state.pendingAttachments.any((a) => a.isImage);
+
+  List<String>? get _pendingAttachmentIds =>
+      state.pendingAttachments.isEmpty ? null : state.pendingAttachments.map((a) => a.id).toList();
+
+  /// Spoken-reply options for typed sends, from the "Speak replies" setting.
+  VoiceReply? get _voiceReply {
+    final prefs = _ref.read(prefsProvider);
+    return prefs.speakReplies ? VoiceReply(voice: prefs.voice) : null;
+  }
+
+  // ---- Spoken replies ----
+
+  AudioPlayerService get _player {
+    final player = _ref.read(audioPlayerProvider);
+    _playerSub ??= player.playingStream.listen((playing) {
+      if (!playing && mounted && state.playingMessageId != null) {
+        state = state.copyWith(clearPlaying: true);
+      }
+    });
+    return player;
+  }
+
+  /// Plays (or stops) the stored spoken version of a reply (`meta.audio`).
+  Future<void> playMessageAudio(ChatMessage message) async {
+    final audio = message.audio;
+    if (audio == null || !audio.isPlayable) return;
+    if (state.playingMessageId == message.id) {
+      await stopAudio();
+      return;
+    }
+    state = state.copyWith(playingMessageId: message.id, clearError: true);
+    try {
+      final loader = _ref.read(attachmentContentLoaderProvider);
+      final content = await loader.load(audio.url);
+      if (!mounted || state.playingMessageId != message.id) return;
+      await _player.play(AudioClip(bytes: content.bytes, mimeType: content.mimeType));
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(clearPlaying: true, error: errorText(e));
+    }
+  }
+
+  Future<void> stopAudio() async {
+    state = state.copyWith(clearPlaying: true);
+    await _player.stop();
+  }
 
   /// Per-turn model override (null = session / default model).
   void setModelOverride(String? modelId) =>
@@ -416,14 +584,25 @@ class ChatController extends StateNotifier<ChatState> {
   /// retry resends the same request options, so the key is reused there.
   static String newIdempotencyKey() => _uuid.v4();
 
-  ChatMessage _optimisticUser(String content, {String? parentId}) => ChatMessage(
+  ChatMessage _optimisticUser(
+    String content, {
+    String? parentId,
+    List<Attachment> attachments = const [],
+  }) =>
+      ChatMessage(
         id: '${ChatMessage.pendingUserPrefix}${DateTime.now().microsecondsSinceEpoch}',
         sessionId: sessionId,
         role: MessageRole.user,
         content: content,
         createdAt: DateTime.now(),
         parentId: parentId,
+        attachments: attachments,
       );
+
+  /// The composer's uploads are bound to the turn that was just accepted.
+  void _consumePendingAttachments() {
+    if (state.pendingAttachments.isNotEmpty) state = state.copyWith(pendingAttachments: const []);
+  }
 
   Future<void> send(String content) async {
     final trimmed = content.trim();
@@ -431,7 +610,8 @@ class ChatController extends StateNotifier<ChatState> {
     _stopRequested = false;
 
     // Optimistically append the user message + a streaming placeholder.
-    final optimisticUser = _optimisticUser(trimmed);
+    final attachments = state.pendingAttachments;
+    final optimisticUser = _optimisticUser(trimmed, attachments: attachments);
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -443,6 +623,8 @@ class ChatController extends StateNotifier<ChatState> {
     final toolNames = effectiveToolNames;
     final model = state.modelOverride;
     final collectionIds = state.collectionIds;
+    final attachmentIds = _pendingAttachmentIds;
+    final voiceReply = _voiceReply;
     final key = newIdempotencyKey();
 
     try {
@@ -460,8 +642,11 @@ class ChatController extends StateNotifier<ChatState> {
           model: model,
           collectionIds: collectionIds,
           idempotencyKey: key,
+          attachmentIds: attachmentIds,
+          voiceReply: voiceReply,
         );
         if (!mounted) return;
+        _consumePendingAttachments();
         _finishBlockingTurn(placeholder.id, assistant);
         return;
       }
@@ -476,11 +661,14 @@ class ChatController extends StateNotifier<ChatState> {
         model: model,
         collectionIds: collectionIds,
         idempotencyKey: key,
+        attachmentIds: attachmentIds,
+        voiceReply: voiceReply,
       );
       if (!mounted) {
         await turn.close();
         return;
       }
+      _consumePendingAttachments();
       _listen(turn, _TurnContext(targetId: placeholder.id, idempotencyKey: key));
 
       if (_stopRequested) {
@@ -489,9 +677,100 @@ class ChatController extends StateNotifier<ChatState> {
       }
     } catch (e) {
       if (!mounted) return;
+      // The uploads stay in the composer so the send can be retried (e.g.
+      // after switching to a vision model).
       _dropEmptyStreaming(placeholder.id);
       _failTurn(e);
     }
+  }
+
+  /// Voice mode: `POST /sessions/{id}/messages/voice` transcribes [clip] and
+  /// starts the turn in the background (202). The transcript becomes the user
+  /// bubble, with the clip as an `audio` attachment, and the reply is
+  /// attached through the generation's event replay — `audio_chunk` frames
+  /// play as they arrive. Voice turns always ask for a spoken reply (the
+  /// server skips it when it has no text-to-speech).
+  Future<void> sendVoice(RecordedClip clip) async {
+    if (clip.isEmpty || state.sending) return;
+    _stopRequested = false;
+
+    final optimisticUser = _optimisticUser(voicePlaceholderText);
+    final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
+    state = state.copyWith(
+      sending: true,
+      stopping: false,
+      clearError: true,
+      messages: [...state.messages, optimisticUser, placeholder],
+    );
+    final key = newIdempotencyKey();
+
+    try {
+      final voiceRepo = await _ref.read(voiceRepositoryProvider.future);
+      final prefs = _ref.read(prefsProvider);
+      final accepted = await voiceRepo.sendVoiceTurn(
+        sessionId: sessionId,
+        bytes: clip.bytes,
+        filename: clip.filename,
+        useRag: state.useRag,
+        useTools: state.useTools,
+        model: state.modelOverride,
+        voice: prefs.voice,
+        idempotencyKey: key,
+      );
+      if (!mounted) return;
+
+      final attachmentId = accepted.attachmentId;
+      final user = ChatMessage(
+        id: accepted.userMessageId.isEmpty ? optimisticUser.id : accepted.userMessageId,
+        sessionId: sessionId,
+        role: MessageRole.user,
+        content: accepted.transcript,
+        createdAt: optimisticUser.createdAt,
+        generationId: accepted.generationId,
+        attachments: [
+          if (attachmentId != null && attachmentId.isNotEmpty)
+            Attachment(
+              id: attachmentId,
+              kind: AttachmentKind.audio,
+              name: clip.filename,
+              mimeType: clip.mimeType,
+              sizeBytes: clip.bytes.length,
+              url: '/api/v1/sessions/$sessionId/attachments/$attachmentId/content',
+              hasText: true,
+            ),
+        ],
+      );
+      _replaceById(optimisticUser.id, (_) => user);
+      _replaceById(placeholder.id, (m) => m.copyWith(generationId: accepted.generationId));
+
+      final repo = await _ref.read(chatRepositoryProvider.future);
+      final turn = await repo.resumeGeneration(sessionId, accepted.generationId);
+      if (!mounted) {
+        await turn.close();
+        return;
+      }
+      _listen(
+        turn,
+        _TurnContext(
+          targetId: placeholder.id,
+          generationId: accepted.generationId,
+          idempotencyKey: key,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _dropEmptyStreaming(placeholder.id);
+      // Nothing was transcribed: drop the optimistic bubble too.
+      _dropPendingUser(optimisticUser.id);
+      _failTurn(e);
+    }
+  }
+
+  void _dropPendingUser(String id) {
+    final msgs = state.messages;
+    final i = msgs.indexWhere((m) => m.id == id && m.isPendingUser);
+    if (i < 0) return;
+    state = state.copyWith(messages: [...msgs.sublist(0, i), ...msgs.sublist(i + 1)]);
   }
 
   /// `POST /sessions/{id}/messages/background`: the server produces the reply
@@ -502,7 +781,7 @@ class ChatController extends StateNotifier<ChatState> {
     if (trimmed.isEmpty || state.sending) return;
     _stopRequested = false;
 
-    final optimisticUser = _optimisticUser(trimmed);
+    final optimisticUser = _optimisticUser(trimmed, attachments: state.pendingAttachments);
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -523,8 +802,11 @@ class ChatController extends StateNotifier<ChatState> {
         model: state.modelOverride,
         collectionIds: state.collectionIds,
         idempotencyKey: key,
+        attachmentIds: _pendingAttachmentIds,
+        voiceReply: _voiceReply,
       );
       if (!mounted) return;
+      _consumePendingAttachments();
       final user = accepted.userMessage;
       if (user != null) _replaceById(optimisticUser.id, (_) => user);
       _replaceById(placeholder.id, (m) => m.copyWith(generationId: accepted.generationId));
@@ -561,7 +843,11 @@ class ChatController extends StateNotifier<ChatState> {
 
     final snapshot = state.messages;
     final original = snapshot[i];
-    final optimisticUser = _optimisticUser(trimmed, parentId: original.parentId);
+    final optimisticUser = _optimisticUser(
+      trimmed,
+      parentId: original.parentId,
+      attachments: state.pendingAttachments,
+    );
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -583,11 +869,14 @@ class ChatController extends StateNotifier<ChatState> {
         model: state.modelOverride,
         collectionIds: state.collectionIds,
         idempotencyKey: key,
+        attachmentIds: _pendingAttachmentIds,
+        voiceReply: _voiceReply,
       );
       if (!mounted) {
         await turn.close();
         return;
       }
+      _consumePendingAttachments();
       _listen(
         turn,
         _TurnContext(targetId: placeholder.id, idempotencyKey: key, restoreOnFailure: snapshot),
@@ -742,16 +1031,31 @@ class ChatController extends StateNotifier<ChatState> {
       e.statusCode == 409 || e.statusCode == 404 || e.code == 'conflict' || e.code == 'not_found';
 
   /// Ends a turn that could not start (or be resumed). A `quota_exceeded`
-  /// refusal raises the app-wide quota banner instead of an inline error.
+  /// refusal raises the app-wide quota banner instead of an inline error; a
+  /// vision refusal (422 with `details.vision_models`) names the models that
+  /// can read the attached images.
   void _failTurn(Object e) {
     final quota = _quotaFrom(e);
     if (quota != null) _ref.read(quotaStateProvider.notifier).set(quota);
     state = state.copyWith(
       sending: false,
       stopping: false,
-      error: quota == null ? errorText(e) : null,
+      error: quota == null ? _turnErrorText(e) : null,
       clearError: quota != null,
     );
+  }
+
+  static String _turnErrorText(Object e) {
+    if (e is ApiException) {
+      final visionModels = e.details?['vision_models'];
+      if (visionModels is List && visionModels.isNotEmpty) {
+        return '${e.userMessage} Models with vision: ${visionModels.join(', ')}.';
+      }
+      if (e.details?['code'] == 'voice_unavailable') {
+        return 'Voice is not available on this server.';
+      }
+    }
+    return errorText(e);
   }
 
   static QuotaExceeded? _quotaFrom(Object e) => e is ApiException && e.isQuotaExceeded
@@ -810,6 +1114,7 @@ class ChatController extends StateNotifier<ChatState> {
         // frame, so the text we already have will arrive again.
         ctx.buffer.clear();
         ctx.tools = [];
+        ctx.artifacts = [];
       }
       _listen(turn, ctx);
     } catch (e) {
@@ -859,11 +1164,38 @@ class ChatController extends StateNotifier<ChatState> {
             generationId: event.generationId,
           ),
         );
+      case ArtifactEvent(:final artifact):
+        if (artifact.id.isEmpty) break;
+        ctx.artifacts = mergeAttachments(ctx.artifacts, [artifact]);
+        _update(ctx, (m) => m.copyWith(artifacts: ctx.artifacts));
+      case AudioChunkEvent():
+        // Spoken reply: the server only sends chunks when they were asked for.
+        final bytes = event.bytes;
+        if (bytes.isNotEmpty) {
+          state = state.copyWith(playingMessageId: ctx.targetId);
+          unawaited(_player.enqueue(AudioClip(bytes: bytes, mimeType: event.mimeType)));
+        }
+      case AudioDoneEvent(:final attachment, :final chunks):
+        if (attachment != null) {
+          _update(
+            ctx,
+            (m) => m.copyWith(audio: MessageAudio.fromAttachment(attachment, chunks: chunks)),
+          );
+        }
       case AssistantMessageEvent():
         // Final canonical version straight from the server.
         _stopTimeout?.cancel();
         _stopTimeout = null;
-        _finishTurn(ctx, event.toMessage(sessionId), persistedId: event.id);
+        final message = event.toMessage(sessionId);
+        _finishTurn(
+          ctx,
+          message.copyWith(
+            // Frames may have announced artifacts the final message omits.
+            artifacts: mergeAttachments(ctx.artifacts, message.artifacts),
+            audio: message.audio ?? _currentAudio(ctx),
+          ),
+          persistedId: event.id,
+        );
       case ErrorEvent(:final message, :final isBusy, :final isStaleApproval):
         if (event.isTransportError && _tryResume(ctx, turn)) return;
         _stopTimeout?.cancel();
@@ -911,6 +1243,14 @@ class ChatController extends StateNotifier<ChatState> {
     }
   }
 
+  /// The `meta.audio` the turn's bubble already carries (from `audio_done`).
+  MessageAudio? _currentAudio(_TurnContext ctx) {
+    for (final m in state.messages) {
+      if (m.id == ctx.targetId) return m.audio;
+    }
+    return null;
+  }
+
   /// Blocking turn: the persisted user message replaces the optimistic one
   /// and the placeholder gives way to the server's tool rows + reply.
   void _finishBlockingTurn(String placeholderId, SendResult result) {
@@ -948,7 +1288,14 @@ class ChatController extends StateNotifier<ChatState> {
       if (leftover >= 0 && leftover != i) msgs.removeAt(leftover);
     }
     _ctx = null;
-    state = state.copyWith(messages: msgs, sending: false, stopping: false);
+    state = state.copyWith(
+      messages: msgs,
+      sending: false,
+      stopping: false,
+      // The spoken reply was attributed to the placeholder; move it to the
+      // persisted message so the stop button follows the bubble.
+      playingMessageId: state.playingMessageId == ctx.targetId ? message.id : null,
+    );
     _afterTurn();
   }
 
@@ -1092,6 +1439,7 @@ class ChatController extends StateNotifier<ChatState> {
   @override
   void dispose() {
     _stopTimeout?.cancel();
+    unawaited(_playerSub?.cancel());
     unawaited(_closeTurn());
     super.dispose();
   }

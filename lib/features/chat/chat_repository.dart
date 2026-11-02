@@ -7,9 +7,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/preferences.dart';
 import '../../core/sse_parser.dart';
+import '../attachments/attachment_model.dart';
 import '../orgs/orgs_repository.dart';
 import 'chat_models.dart';
 import 'chat_ws.dart';
+
+/// Spoken-reply options of a send (`voice_reply`, `voice`, `audio_format`).
+/// The stream then carries `audio_chunk` frames before `assistant_message`;
+/// a blocking send answers with `meta.audio` instead.
+class VoiceReply {
+  const VoiceReply({this.voice, this.audioFormat});
+
+  /// Voice id from `GET /audio/voices`; null = the server default.
+  final String? voice;
+
+  /// `mp3` | `wav` | … ; null = the server default.
+  final String? audioFormat;
+
+  Map<String, Object?> toJson() => {
+        'voice_reply': true,
+        if (voice != null) 'voice': voice,
+        if (audioFormat != null) 'audio_format': audioFormat,
+      };
+}
 
 /// Live handle on a streamed assistant turn.
 ///
@@ -71,10 +91,17 @@ class SendResult {
 
   factory SendResult.fromJson(Map<String, dynamic> body) {
     final user = body['user_message'];
+    var assistant =
+        ChatMessage.fromJson((body['assistant_message'] as Map).cast<String, dynamic>());
+    // The top-level `artifacts` duplicate `assistant_message.meta.artifacts`;
+    // keep whichever the server filled in.
+    final artifacts = attachmentsFrom(body['artifacts']);
+    if (artifacts.isNotEmpty) {
+      assistant = assistant.copyWith(artifacts: mergeAttachments(assistant.artifacts, artifacts));
+    }
     return SendResult(
       userMessage: user is Map ? ChatMessage.fromJson(user.cast<String, dynamic>()) : null,
-      assistantMessage:
-          ChatMessage.fromJson((body['assistant_message'] as Map).cast<String, dynamic>()),
+      assistantMessage: assistant,
       toolMessages: (body['tool_messages'] as List? ?? const [])
           .whereType<Map>()
           .map((m) => ChatMessage.fromJson(m.cast<String, dynamic>()))
@@ -311,6 +338,8 @@ class ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     final res = await _client.request<Map<String, dynamic>>(
       '/sessions/$sessionId/messages',
@@ -322,6 +351,8 @@ class ChatRepository {
         toolNames: toolNames,
         model: model,
         collectionIds: collectionIds,
+        attachmentIds: attachmentIds,
+        voiceReply: voiceReply,
       ),
       options: _idempotent(idempotencyKey),
     );
@@ -334,6 +365,10 @@ class ChatRepository {
   static Map<String, String>? _idempotentHeaders(String? key) =>
       key == null ? null : {idempotencyHeader: key};
 
+  /// The body shared by every send path. `attachment_ids` binds uploads of
+  /// this session to the new user message (images need a vision model: 422
+  /// with `details.vision_models` otherwise); `voice_reply` asks for a spoken
+  /// reply. Both are omitted when unused so older servers are unaffected.
   static Map<String, Object?> _turnBody({
     required String content,
     required bool useRag,
@@ -342,6 +377,8 @@ class ChatRepository {
     double? temperature,
     String? model,
     List<String>? collectionIds,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) =>
       {
         'content': content,
@@ -351,6 +388,8 @@ class ChatRepository {
         'temperature': temperature,
         if (model != null) 'model': model,
         if (collectionIds != null) 'collection_ids': collectionIds,
+        if (attachmentIds != null && attachmentIds.isNotEmpty) 'attachment_ids': attachmentIds,
+        ...?voiceReply?.toJson(),
       };
 
   // ---- Streaming ----
@@ -378,6 +417,8 @@ class ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) {
     return switch (transport) {
       StreamTransport.sse => _openSse(
@@ -391,6 +432,8 @@ class ChatRepository {
             temperature: temperature,
             model: model,
             collectionIds: collectionIds,
+            attachmentIds: attachmentIds,
+            voiceReply: voiceReply,
           ),
           headers: _idempotentHeaders(idempotencyKey),
         ),
@@ -404,6 +447,8 @@ class ChatRepository {
             temperature: temperature,
             model: model,
             collectionIds: collectionIds,
+            attachmentIds: attachmentIds,
+            voiceReply: voiceReply,
           ),
         ),
     };
@@ -424,6 +469,8 @@ class ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) {
     return _openSse(
       sessionId: sessionId,
@@ -436,6 +483,8 @@ class ChatRepository {
         temperature: temperature,
         model: model,
         collectionIds: collectionIds,
+        attachmentIds: attachmentIds,
+        voiceReply: voiceReply,
       ),
       headers: _idempotentHeaders(idempotencyKey),
     );
@@ -494,6 +543,8 @@ class ChatRepository {
     String? model,
     List<String>? collectionIds,
     String? idempotencyKey,
+    List<String>? attachmentIds,
+    VoiceReply? voiceReply,
   }) async {
     final res = await _client.request<Map<String, dynamic>>(
       '/sessions/$sessionId/messages/background',
@@ -505,6 +556,8 @@ class ChatRepository {
         toolNames: toolNames,
         model: model,
         collectionIds: collectionIds,
+        attachmentIds: attachmentIds,
+        voiceReply: voiceReply,
       ),
       options: _idempotent(idempotencyKey),
     );
