@@ -71,7 +71,10 @@ void main() {
       expect(e.promptTokens, 1240);
       expect(e.completionTokens, 312);
       expect(e.totalTokens, 1552);
-      expect((StreamEvent.fromJson({'type': 'usage', 'data': null}) as UsageEvent).totalTokens, isNull);
+      expect(
+        (StreamEvent.fromJson({'type': 'usage', 'data': null}) as UsageEvent).totalTokens,
+        isNull,
+      );
     });
 
     test('done — normal and interrupted', () {
@@ -100,7 +103,13 @@ void main() {
           'content': 'Hello!',
           'created_at': '2026-01-01T00:00:01Z',
           'citations': [
-            {'document_id': 'd1', 'document_name': 'spec.pdf', 'chunk_index': 0, 'score': 0.5, 'excerpt': 'x'},
+            {
+              'document_id': 'd1',
+              'document_name': 'spec.pdf',
+              'chunk_index': 0,
+              'score': 0.5,
+              'excerpt': 'x',
+            },
           ],
           'tool_calls': [
             {'tool': 'calculator', 'input': '2+2', 'output': '4'},
@@ -190,7 +199,13 @@ void main() {
         'created_at': '2026-01-01T00:00:00Z',
         'meta': {
           'citations': [
-            {'document_id': 'd', 'document_name': 'n', 'chunk_index': 1, 'score': 0.1, 'excerpt': 'e'},
+            {
+              'document_id': 'd',
+              'document_name': 'n',
+              'chunk_index': 1,
+              'score': 0.1,
+              'excerpt': 'e',
+            },
           ],
           'tool_calls': [
             {'tool': 'web_search', 'input': 'q', 'output': 'r'},
@@ -246,12 +261,20 @@ void phase2Tests() {
     test('done carries status and model', () {
       final paused = StreamEvent.fromJson({
         'type': 'done',
-        'data': {'text': '', 'status': 'awaiting_approval', 'interrupted': false, 'model': 'gpt-4o'},
+        'data': {
+          'text': '',
+          'status': 'awaiting_approval',
+          'interrupted': false,
+          'model': 'gpt-4o',
+        },
       }) as DoneEvent;
       expect(paused.awaitingApproval, isTrue);
       expect(paused.interrupted, isFalse);
       expect(paused.model, 'gpt-4o');
-      final plain = StreamEvent.fromJson({'type': 'done', 'data': {'text': 'x'}}) as DoneEvent;
+      final plain = StreamEvent.fromJson({
+        'type': 'done',
+        'data': {'text': 'x'},
+      }) as DoneEvent;
       expect(plain.awaitingApproval, isFalse);
       expect(plain.status, isNull);
       expect(plain.model, isNull);
@@ -324,7 +347,13 @@ void phase2Tests() {
             'match': 'hybrid',
             'excerpt': 'first 300 chars',
           },
-          {'document_id': 'd2', 'document_name': 'notes.md', 'chunk_index': 0, 'score': 0.5, 'excerpt': ''},
+          {
+            'document_id': 'd2',
+            'document_name': 'notes.md',
+            'chunk_index': 0,
+            'score': 0.5,
+            'excerpt': '',
+          },
         ],
       }) as CitationsEvent;
       final c = e.citations.first;
@@ -394,7 +423,10 @@ void phase2Tests() {
         'data': {'code': 'conflict', 'message': 'resolved'},
       }) as ErrorEvent;
       expect(conflict.isStaleApproval, isTrue);
-      final busy = StreamEvent.fromJson({'type': 'error', 'data': {'code': 'busy'}}) as ErrorEvent;
+      final busy = StreamEvent.fromJson({
+        'type': 'error',
+        'data': {'code': 'busy'},
+      }) as ErrorEvent;
       expect(busy.isStaleApproval, isFalse);
     });
   });
@@ -443,7 +475,11 @@ void phase2Tests() {
             'message_id': 'a1',
             'status': 'pending',
             'tool_calls': [
-              {'call_id': 'c1', 'tool': 'web_search', 'input': {'query': 'q'}},
+              {
+                'call_id': 'c1',
+                'tool': 'web_search',
+                'input': {'query': 'q'},
+              },
             ],
           },
         },
@@ -480,7 +516,9 @@ void phase2Tests() {
         'id': 's1',
         'title': 'T',
         'model': 'gpt-4o',
-        'meta': {'collection_ids': ['c1', 'c2']},
+        'meta': {
+          'collection_ids': ['c1', 'c2'],
+        },
         'created_at': '2026-01-01T00:00:00Z',
         'updated_at': '2026-01-01T00:00:00Z',
       });
@@ -504,6 +542,191 @@ void phase2Tests() {
       expect(r.highlight, contains('<mark>'));
       expect(r.rank, closeTo(0.42, 1e-9));
       expect(r.role, MessageRole.assistant);
+    });
+  });
+
+  phase3Tests();
+}
+
+void phase3Tests() {
+  group('Phase 3 events', () {
+    test('user_message carries generation_id, parent_id and siblings', () {
+      final e = StreamEvent.fromJson({
+        'type': 'user_message',
+        'data': {
+          'id': 'u2',
+          'content': 'edited',
+          'generation_id': 'gen-1',
+          'parent_id': 'a1',
+          'siblings': {'index': 1, 'count': 2},
+          'created_at': '2026-01-01T00:00:00Z',
+        },
+      }) as UserMessageEvent;
+      expect(e.generationId, 'gen-1');
+      expect(e.parentId, 'a1');
+      final m = e.toMessage('s1');
+      expect(m.generationId, 'gen-1');
+      expect(m.parentId, 'a1');
+      expect(m.siblings?.index, 1);
+      expect(m.siblings?.count, 2);
+      expect(m.siblings?.displayIndex, 2);
+      expect(m.siblings?.hasSiblings, isTrue);
+    });
+
+    test('done and assistant_message carry generation_id; memories_used is read from meta', () {
+      final done = StreamEvent.fromJson({
+        'type': 'done',
+        'data': {'text': 'x', 'generation_id': 'gen-1'},
+      }) as DoneEvent;
+      expect(done.generationId, 'gen-1');
+
+      final e = StreamEvent.fromJson({
+        'type': 'assistant_message',
+        'data': {
+          'id': 'a2',
+          'content': 'Personalised answer',
+          'parent_id': 'u2',
+          'generation_id': 'gen-1',
+          'meta': {
+            'memories_used': ['m1', 'm2'],
+            'feedback': {'rating': 1, 'comment': null},
+          },
+        },
+      }) as AssistantMessageEvent;
+      expect(e.generationId, 'gen-1');
+      expect(e.memoriesUsed, ['m1', 'm2']);
+      final m = e.toMessage('s1');
+      expect(m.parentId, 'u2');
+      expect(m.generationId, 'gen-1');
+      expect(m.memoriesUsed, ['m1', 'm2']);
+      expect(m.feedback?.isUp, isTrue);
+      expect(m.copyWith(clearFeedback: true).feedback, isNull);
+      expect(m.copyWith(clearSiblings: true).siblings, isNull);
+    });
+
+    test('error frames expose quota details and transport drops', () {
+      final quota = StreamEvent.fromJson({
+        'type': 'error',
+        'data': {
+          'code': 'quota_exceeded',
+          'message': 'budget spent',
+          'details': {
+            'budget_usd_per_month': 10,
+            'used_usd': 10.2,
+            'resets_at': '2026-12-01T00:00:00Z',
+          },
+        },
+      }) as ErrorEvent;
+      expect(quota.isQuotaExceeded, isTrue);
+      expect(quota.details?['used_usd'], 10.2);
+      expect(quota.isTransportError, isFalse);
+      const drop = ErrorEvent(message: 'socket closed', code: 'network_error');
+      expect(drop.isTransportError, isTrue);
+      expect(drop.isQuotaExceeded, isFalse);
+    });
+  });
+
+  group('Phase 3 models', () {
+    test('history rows parse parent_id, siblings, feedback and memories_used', () {
+      final m = ChatMessage.fromJson({
+        'id': 'a1',
+        'session_id': 's1',
+        'parent_id': 'u1',
+        'role': 'assistant',
+        'content': 'x',
+        'created_at': '2026-01-01T00:00:00Z',
+        'siblings': {'index': 0, 'count': 3},
+        'meta': {
+          'feedback': {'rating': -1, 'comment': 'too long'},
+          'memories_used': ['m1'],
+          'generation_id': 'gen-0',
+        },
+      });
+      expect(m.parentId, 'u1');
+      expect(m.siblings?.displayIndex, 1);
+      expect(m.siblings?.count, 3);
+      expect(m.feedback?.isDown, isTrue);
+      expect(m.feedback?.comment, 'too long');
+      expect(m.memoriesUsed, ['m1']);
+      expect(m.generationId, 'gen-0');
+      expect(m.isPendingUser, isFalse);
+
+      final plain = ChatMessage.fromJson({
+        'id': 'u1',
+        'session_id': 's1',
+        'role': 'user',
+        'content': 'q',
+        'created_at': '2026-01-01T00:00:00Z',
+      });
+      expect(plain.siblings, isNull);
+      expect(plain.feedback, isNull);
+      expect(plain.memoriesUsed, isEmpty);
+    });
+
+    test('sessions expose org_id, assistant_id and active_leaf_id', () {
+      final s = ChatSession.fromJson({
+        'id': 's1',
+        'org_id': 'o1',
+        'assistant_id': 'as1',
+        'active_leaf_id': 'a9',
+        'title': 'T',
+        'meta': {},
+        'created_at': '2026-01-01T00:00:00Z',
+        'updated_at': '2026-01-01T00:00:00Z',
+      });
+      expect(s.orgId, 'o1');
+      expect(s.assistantId, 'as1');
+      expect(s.activeLeafId, 'a9');
+      expect(s.copyWith(clearAssistantId: true).assistantId, isNull);
+      expect(s.copyWith(assistantId: 'as2').assistantId, 'as2');
+    });
+
+    test('siblings, active generation and background responses', () {
+      final siblings = SiblingsResult.fromJson({
+        'items': [
+          {
+            'id': 'a1',
+            'session_id': 's1',
+            'role': 'assistant',
+            'content': 'x',
+            'created_at': '2026-01-01T00:00:00Z',
+          },
+          {
+            'id': 'a2',
+            'session_id': 's1',
+            'role': 'assistant',
+            'content': 'y',
+            'created_at': '2026-01-01T00:00:01Z',
+          },
+        ],
+        'active_index': 1,
+      });
+      expect(siblings.items.map((m) => m.id), ['a1', 'a2']);
+      expect(siblings.activeIndex, 1);
+
+      final running = ActiveGeneration.fromJson({
+        'generation_id': 'g1',
+        'started_at': '2026-01-01T00:00:00Z',
+        'status': 'running',
+      });
+      expect(running.isRunning, isTrue);
+      expect(
+        ActiveGeneration.fromJson({'generation_id': 'g1', 'status': 'done'}).isRunning,
+        isFalse,
+      );
+
+      final bg = BackgroundSend.fromJson({
+        'generation_id': 'g2',
+        'user_message': {
+          'id': 'u1',
+          'session_id': 's1',
+          'role': 'user',
+          'content': 'q',
+          'created_at': '2026-01-01T00:00:00Z',
+        },
+      });
+      expect(bg.generationId, 'g2');
+      expect(bg.userMessage?.id, 'u1');
     });
   });
 }

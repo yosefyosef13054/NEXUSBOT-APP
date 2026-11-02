@@ -74,9 +74,8 @@ class ApprovalCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 OutlinedButton.icon(
-                  onPressed: busy || onDecision == null
-                      ? null
-                      : () => onDecision!(ApprovalDecision.deny),
+                  onPressed:
+                      busy || onDecision == null ? null : () => onDecision!(ApprovalDecision.deny),
                   icon: const Icon(Icons.block_rounded, size: 16),
                   label: const Text('Deny'),
                   style: OutlinedButton.styleFrom(

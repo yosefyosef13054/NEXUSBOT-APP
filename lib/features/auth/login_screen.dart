@@ -144,7 +144,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             onPressed: () => context.go(AppRoutes.register),
                             child: const Text(
                               'Create an account',
-                              style: TextStyle(color: NexusColors.crimson, fontWeight: FontWeight.w700),
+                              style: TextStyle(
+                                color: NexusColors.crimson,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],

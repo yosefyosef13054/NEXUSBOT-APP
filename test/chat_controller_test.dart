@@ -4,10 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexusbot/core/api_client.dart';
 import 'package:nexusbot/core/preferences.dart';
+import 'package:nexusbot/core/secure_storage.dart';
 import 'package:nexusbot/features/chat/chat_controller.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
 import 'package:nexusbot/features/chat/chat_repository.dart';
 import 'package:nexusbot/features/tools/tools_repository.dart';
+import 'package:nexusbot/features/usage/usage_model.dart';
+import 'package:nexusbot/features/usage/usage_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/fakes.dart';
@@ -32,15 +35,37 @@ class FakeChatRepository extends ChatRepository {
   String? lastModel;
   List<String>? lastCollectionIds;
 
-  /// Every `updateSession` call: `{title, model, meta}` as received.
+  /// Every `Idempotency-Key` seen on a send / edit / background call, in order.
+  final keys = <String?>[];
+
+  /// Every `updateSession` call: `{title, model, meta, assistantId, clearAssistantId}`.
   final updates = <Map<String, Object?>>[];
 
   /// Every `resolveApproval` call.
   final resolved = <(String approvalId, ApprovalDecision decision, StreamTransport transport)>[];
   StreamController<StreamEvent>? turn;
 
+  /// The handle of the most recently opened turn (tests set `lastEventId`).
+  ChatTurn? lastTurn;
+
   /// Answer for the non-streaming path and for `regenerate`.
   SendResult? blockingResult;
+
+  // ── Phase 3 ──
+  Map<String, SiblingsResult> siblings = {};
+  final siblingCalls = <String>[];
+  List<ChatMessage>? branchHistory;
+  final branchCalls = <String>[];
+  Object? editError;
+  final editCalls = <({String messageId, String content})>[];
+  Object? resumeError;
+  final resumeCalls = <({String generationId, String? after})>[];
+  ActiveGeneration? activeGen;
+  BackgroundSend? backgroundResult;
+  Object? backgroundError;
+  final backgroundCalls = <String>[];
+  Object? feedbackError;
+  final feedbackCalls = <({String messageId, int? rating, String? comment})>[];
 
   @override
   Future<SendResult> sendBlocking({
@@ -51,12 +76,14 @@ class FakeChatRepository extends ChatRepository {
     List<String>? toolNames,
     String? model,
     List<String>? collectionIds,
+    String? idempotencyKey,
   }) async {
     lastUseRag = useRag;
     lastUseTools = useTools;
     lastToolNames = toolNames;
     lastModel = model;
     lastCollectionIds = collectionIds;
+    keys.add(idempotencyKey);
     return blockingResult!;
   }
 
@@ -94,18 +121,33 @@ class FakeChatRepository extends ChatRepository {
     String? title,
     String? model,
     Map<String, dynamic>? meta,
+    String? assistantId,
+    bool clearAssistantId = false,
   }) async {
-    updates.add({'title': title, 'model': model, 'meta': meta});
+    updates.add({
+      'title': title,
+      'model': model,
+      'meta': meta,
+      'assistantId': assistantId,
+      'clearAssistantId': clearAssistantId,
+    });
     final current = await getSession(id);
-    return session = current.copyWith(title: title, model: model, meta: meta);
+    return session = current.copyWith(
+      title: title,
+      model: model,
+      meta: meta,
+      assistantId: assistantId,
+      clearAssistantId: clearAssistantId,
+    );
   }
 
-  ChatTurn _openTurn(StreamTransport transport) {
+  ChatTurn _openTurn(StreamTransport transport, {String? generationId}) {
     final controller = StreamController<StreamEvent>();
     turn = controller;
-    return ChatTurn(
+    return lastTurn = ChatTurn(
       transport: transport,
       events: controller.stream,
+      generationId: generationId,
       stop: () async => stopCalls++,
       close: () async {
         closeCalls++;
@@ -125,6 +167,7 @@ class FakeChatRepository extends ChatRepository {
     double? temperature,
     String? model,
     List<String>? collectionIds,
+    String? idempotencyKey,
   }) async {
     final error = openError;
     if (error != null) throw error;
@@ -134,6 +177,7 @@ class FakeChatRepository extends ChatRepository {
     lastToolNames = toolNames;
     lastModel = model;
     lastCollectionIds = collectionIds;
+    keys.add(idempotencyKey);
     return _openTurn(transport);
   }
 
@@ -149,12 +193,135 @@ class FakeChatRepository extends ChatRepository {
     resolved.add((approvalId, decision, transport));
     return _openTurn(transport);
   }
+
+  @override
+  Future<SiblingsResult> listSiblings(String sessionId, String messageId) async {
+    siblingCalls.add(messageId);
+    return siblings[messageId] ?? const SiblingsResult(items: [], activeIndex: 0);
+  }
+
+  @override
+  Future<List<ChatMessage>> branch(String sessionId, {required String leafMessageId}) async {
+    branchCalls.add(leafMessageId);
+    return branchHistory ?? history;
+  }
+
+  @override
+  Future<ChatTurn> editMessage({
+    required String sessionId,
+    required String messageId,
+    required String content,
+    bool useRag = true,
+    bool useTools = true,
+    List<String>? toolNames,
+    double? temperature,
+    String? model,
+    List<String>? collectionIds,
+    String? idempotencyKey,
+  }) async {
+    final error = editError;
+    if (error != null) throw error;
+    editCalls.add((messageId: messageId, content: content));
+    keys.add(idempotencyKey);
+    return _openTurn(StreamTransport.sse);
+  }
+
+  @override
+  Future<ChatTurn> resumeGeneration(
+    String sessionId,
+    String generationId, {
+    String? after,
+  }) async {
+    final error = resumeError;
+    if (error != null) throw error;
+    resumeCalls.add((generationId: generationId, after: after));
+    return _openTurn(StreamTransport.sse, generationId: generationId);
+  }
+
+  @override
+  Future<ActiveGeneration?> activeGeneration(String sessionId) async => activeGen;
+
+  @override
+  Future<BackgroundSend> sendBackground({
+    required String sessionId,
+    required String content,
+    bool useRag = true,
+    bool useTools = true,
+    List<String>? toolNames,
+    String? model,
+    List<String>? collectionIds,
+    String? idempotencyKey,
+  }) async {
+    final error = backgroundError;
+    if (error != null) throw error;
+    backgroundCalls.add(content);
+    keys.add(idempotencyKey);
+    return backgroundResult!;
+  }
+
+  @override
+  Future<MessageFeedback> setFeedback(
+    String sessionId,
+    String messageId, {
+    required int rating,
+    String? comment,
+  }) async {
+    final error = feedbackError;
+    if (error != null) throw error;
+    feedbackCalls.add((messageId: messageId, rating: rating, comment: comment));
+    return MessageFeedback(rating: rating, comment: comment);
+  }
+
+  @override
+  Future<void> clearFeedback(String sessionId, String messageId) async {
+    final error = feedbackError;
+    if (error != null) throw error;
+    feedbackCalls.add((messageId: messageId, rating: null, comment: null));
+  }
 }
+
+/// `GET /usage/me` stand-in for the quota refresh.
+class FakeUsageRepository extends UsageRepository {
+  FakeUsageRepository() : super(ApiClient.create(MemoryTokenStorage()));
+
+  int meCalls = 0;
+  UsageSummary summary = usageSummary(remainingUsd: 4);
+
+  @override
+  Future<UsageSummary> me() async {
+    meCalls++;
+    return summary;
+  }
+}
+
+UsageSummary usageSummary({required double remainingUsd}) => UsageSummary.fromJson({
+      'period': {'start': '2026-11-01T00:00:00+00:00', 'end': '2026-12-01T00:00:00+00:00'},
+      'user': {'tokens': 10, 'cost_usd': 0.1, 'messages': 1},
+      'org': {
+        'id': 'o1',
+        'tokens': 100,
+        'cost_usd': 10 - remainingUsd,
+        'messages': 5,
+        'budget_usd_per_month': 10,
+        'remaining_usd': remainingUsd,
+      },
+    });
 
 const session = 's1';
 
 ChatMessage assistantFrom(Map<String, dynamic> data) =>
     AssistantMessageEvent(data: data).toMessage(session);
+
+ChatMessage userMessage(String id, String content, {String? parentId, SiblingInfo? siblings}) =>
+    ChatMessage(
+      id: id,
+      sessionId: session,
+      role: MessageRole.user,
+      content: content,
+      createdAt: DateTime(2026),
+      parentId: parentId,
+      siblings: siblings,
+    );
 
 const approvalJson = {
   'approval_id': 'ap1',
@@ -177,10 +344,22 @@ const tools = [
   ToolInfo(name: 'db_lookup', description: 'DB'),
 ];
 
+ApiException quotaException() => ApiException(
+      code: 'quota_exceeded',
+      message: 'Monthly spending budget exhausted for this organization',
+      statusCode: 429,
+      details: const {
+        'budget_usd_per_month': 10.0,
+        'used_usd': 10.2,
+        'resets_at': '2026-12-01T00:00:00+00:00',
+      },
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late FakeChatRepository repo;
+  late FakeUsageRepository usageRepo;
   late ProviderContainer container;
 
   Future<void> setUpContainer({
@@ -201,7 +380,10 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     container = ProviderContainer(
       overrides: [
+        // No platform channels: the signed-in user resolves to null.
+        tokenStorageProvider.overrideWithValue(MemoryTokenStorage()),
         chatRepositoryProvider.overrideWith((ref) async => repo),
+        usageRepositoryProvider.overrideWith((ref) async => usageRepo),
         prefsProvider.overrideWith((ref) => PrefsController(prefs)),
         sessionPrefsProvider.overrideWith((ref) => SessionPrefs(prefs)),
         toolCatalogProvider.overrideWith((ref) async => toolCatalog),
@@ -217,11 +399,13 @@ void main() {
     container.listen(chatControllerProvider(session), (_, __) {});
     container.listen(sessionListProvider, (_, __) {});
     container.listen(toolCatalogProvider, (_, __) {});
+    container.listen(quotaStateProvider, (_, __) {});
     await pumpEventQueue();
   }
 
   ChatState state() => container.read(chatControllerProvider(session));
   ChatController controller() => container.read(chatControllerProvider(session).notifier);
+  QuotaExceeded? quota() => container.read(quotaStateProvider);
 
   /// Sends a message and returns the fake turn's event sink.
   Future<StreamController<StreamEvent>> send(String text) async {
@@ -259,11 +443,18 @@ void main() {
     );
   }
 
-  setUp(() => repo = FakeChatRepository());
+  setUp(() {
+    repo = FakeChatRepository();
+    usageRepo = FakeUsageRepository();
+  });
 
   test('loads history on creation', () async {
     repo.history = [
-      assistantFrom({'id': 'a0', 'content': 'earlier', 'meta': {'status': 'interrupted'}}),
+      assistantFrom({
+        'id': 'a0',
+        'content': 'earlier',
+        'meta': {'status': 'interrupted'},
+      }),
     ];
     await setUpContainer();
     expect(state().messages.map((m) => m.id), ['a0']);
@@ -312,7 +503,13 @@ void main() {
       turn,
       const CitationsEvent(
         citations: [
-          Citation(documentId: 'd1', documentName: 'spec.pdf', chunkIndex: 0, score: 0.9, excerpt: 'x'),
+          Citation(
+            documentId: 'd1',
+            documentName: 'spec.pdf',
+            chunkIndex: 0,
+            score: 0.9,
+            excerpt: 'x',
+          ),
         ],
       ),
     );
@@ -320,7 +517,9 @@ void main() {
     expect(state().messages.last.toolCalls, isEmpty, reason: 'start frames carry no result');
     await emit(
       turn,
-      const ToolCallEvent(data: {'phase': 'end', 'tool': 'calculator', 'input': '2+2', 'output': '4'}),
+      const ToolCallEvent(
+        data: {'phase': 'end', 'tool': 'calculator', 'input': '2+2', 'output': '4'},
+      ),
     );
     final last = state().messages.last;
     expect(last.citations.single.documentName, 'spec.pdf');
@@ -341,12 +540,20 @@ void main() {
     await emit(
       turn,
       const ToolCallEvent(
-        data: {'phase': 'end', 'tool': 'web_search', 'call_id': 'c1', 'output': 'ok', 'latency_ms': 7},
+        data: {
+          'phase': 'end',
+          'tool': 'web_search',
+          'call_id': 'c1',
+          'output': 'ok',
+          'latency_ms': 7,
+        },
       ),
     );
     await emit(
       turn,
-      const ToolCallEvent(data: {'phase': 'end', 'tool': 'calculator', 'call_id': 'c2', 'output': '4'}),
+      const ToolCallEvent(
+        data: {'phase': 'end', 'tool': 'calculator', 'call_id': 'c2', 'output': '4'},
+      ),
     );
     final calls = state().messages.last.toolCalls;
     expect(calls.map((c) => c.callId), ['c1', 'c2']);
@@ -381,7 +588,12 @@ void main() {
     await emit(
       turn,
       const AssistantMessageEvent(
-        data: {'id': 'a1', 'content': 'Hello!', 'created_at': '2026-01-01T00:00:01Z', 'model': 'gpt-4o'},
+        data: {
+          'id': 'a1',
+          'content': 'Hello!',
+          'created_at': '2026-01-01T00:00:01Z',
+          'model': 'gpt-4o',
+        },
       ),
     );
     final last = state().messages.last;
@@ -495,6 +707,7 @@ void main() {
     await pumpEventQueue();
     expect(state().sending, isFalse);
     expect(state().messages.last.streaming, isFalse);
+    expect(repo.resumeCalls, isEmpty, reason: 'no generation id yet → nothing to resume');
   });
 
   test('ignores a send while a turn is in flight', () async {
@@ -548,7 +761,9 @@ void main() {
         id: session,
         title: 'Specs',
         model: 'gpt-4o',
-        meta: const {'collection_ids': ['c1', 'c2']},
+        meta: const {
+          'collection_ids': ['c1', 'c2'],
+        },
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -581,7 +796,10 @@ void main() {
       );
       await setUpContainer();
       await controller().setCollectionIds(['c9']);
-      expect(repo.updates.single['meta'], {'other': 1, 'collection_ids': ['c9']});
+      expect(repo.updates.single['meta'], {
+        'other': 1,
+        'collection_ids': ['c9'],
+      });
       expect(state().collectionIds, ['c9']);
       expect(state().session?.collectionIds, ['c9']);
 
@@ -600,6 +818,16 @@ void main() {
       expect(repo.updates.single['model'], 'gpt-4o');
       expect(state().session?.model, 'gpt-4o');
       expect(repo.listCalls, listCallsBefore + 1);
+    });
+
+    test('setAssistant patches assistant_id; null clears it', () async {
+      await setUpContainer();
+      await controller().setAssistant('as1');
+      expect(repo.updates.single['assistantId'], 'as1');
+      expect(state().session?.assistantId, 'as1');
+      await controller().setAssistant(null);
+      expect(repo.updates.last['clearAssistantId'], isTrue);
+      expect(state().session?.assistantId, isNull);
     });
   });
 
@@ -682,7 +910,11 @@ void main() {
       await emit(
         turn,
         const AssistantMessageEvent(
-          data: {'id': 'a1', 'content': 'Let me check. I was not allowed to search.', 'status': 'ok'},
+          data: {
+            'id': 'a1',
+            'content': 'Let me check. I was not allowed to search.',
+            'status': 'ok',
+          },
         ),
       );
       final last = state().messages.last;
@@ -710,9 +942,14 @@ void main() {
     test('409 / 404 on resolve refreshes the history', () async {
       await setUpContainer();
       await pauseForApproval();
-      repo.resolveError = ApiException(code: 'conflict', message: 'already resolved', statusCode: 409);
+      repo.resolveError =
+          ApiException(code: 'conflict', message: 'already resolved', statusCode: 409);
       repo.history = [
-        assistantFrom({'id': 'a1', 'content': 'Resolved elsewhere', 'meta': {'status': 'ok'}}),
+        assistantFrom({
+          'id': 'a1',
+          'content': 'Resolved elsewhere',
+          'meta': {'status': 'ok'},
+        }),
       ];
       final historyCallsBefore = repo.historyCalls;
       await controller().resolveApproval('ap1', ApprovalDecision.approve);
@@ -728,7 +965,11 @@ void main() {
       await setUpContainer(transport: StreamTransport.websocket);
       await pauseForApproval();
       repo.history = [
-        assistantFrom({'id': 'a1', 'content': 'Expired', 'meta': {'status': 'ok'}}),
+        assistantFrom({
+          'id': 'a1',
+          'content': 'Expired',
+          'meta': {'status': 'ok'},
+        }),
       ];
       await controller().resolveApproval('ap1', ApprovalDecision.approve);
       await pumpEventQueue();
@@ -815,17 +1056,13 @@ void main() {
       expect(state().messages[1].isToolRun, isTrue);
       expect(state().messages.last.model, 'gpt-4o-mini');
       expect(state().sending, isFalse);
+      expect(repo.keys.single, isNotNull, reason: 'blocking sends carry an Idempotency-Key');
     });
 
-    test('regenerate swaps the previous reply and its tool rows', () async {
+    test('regenerate swaps the previous reply, then reloads the branch with its siblings',
+        () async {
       repo.history = [
-        ChatMessage.fromJson({
-          'id': 'u1',
-          'session_id': session,
-          'role': 'user',
-          'content': 'q',
-          'created_at': '2026-01-01T00:00:00Z',
-        }),
+        userMessage('u1', 'q'),
         ChatMessage.fromJson({
           'id': 't1',
           'session_id': session,
@@ -856,9 +1093,23 @@ void main() {
         },
       });
       await setUpContainer();
+      final historyCallsBefore = repo.historyCalls;
+      // What the server's active branch looks like after the regenerate: the
+      // old reply is kept as a sibling of the new one.
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({
+          'id': 'a2',
+          'content': 'new answer',
+          'siblings': {'index': 1, 'count': 2},
+        }),
+      ];
       await controller().regenerate();
       await pumpEventQueue();
-      expect(state().messages.map((m) => m.id), ['u1', 't2', 'a2']);
+      expect(repo.historyCalls, historyCallsBefore + 1, reason: 'active branch reloaded');
+      expect(state().messages.map((m) => m.id), ['u1', 'a2']);
+      expect(state().messages.last.siblings?.count, 2);
+      expect(state().messages.last.siblings?.displayIndex, 2);
       expect(state().sending, isFalse);
     });
 
@@ -908,6 +1159,484 @@ void main() {
       expect(run.status, ToolCallStatus.ok);
       expect(run.latencyMs, 12);
       expect(msgs[2].toolCalls.single.callId, 'call_1', reason: 'same run, deduped by the UI');
+    });
+  });
+
+  // ── Phase 3: branching ───────────────────────────────────────────────
+
+  group('branching', () {
+    final a0 = assistantFrom({'id': 'a0', 'content': 'first answer'});
+    final a1 = assistantFrom({
+      'id': 'a1',
+      'content': 'second answer',
+      'siblings': {'index': 1, 'count': 2},
+    });
+
+    test('‹ resolves the previous sibling through /siblings and swaps in its branch', () async {
+      repo.history = [userMessage('u1', 'q'), a1];
+      repo.siblings['a1'] = SiblingsResult(items: [a0, a1], activeIndex: 1);
+      repo.branchHistory = [
+        userMessage('u1', 'q'),
+        assistantFrom({
+          'id': 'a0',
+          'content': 'first answer',
+          'siblings': {'index': 0, 'count': 2},
+        }),
+      ];
+      await setUpContainer();
+
+      final future = controller().switchSibling('a1', -1);
+      expect(state().switchingBranch, isTrue);
+      await future;
+      expect(repo.siblingCalls, ['a1']);
+      expect(repo.branchCalls, ['a0'], reason: 'the chosen sibling is the new leaf');
+      expect(state().messages.map((m) => m.id), ['u1', 'a0']);
+      expect(state().messages.last.siblings?.displayIndex, 1);
+      expect(state().session?.activeLeafId, 'a0');
+      expect(state().switchingBranch, isFalse);
+      expect(state().error, isNull);
+    });
+
+    test('› wraps around to the first sibling', () async {
+      repo.history = [userMessage('u1', 'q'), a1];
+      repo.siblings['a1'] = SiblingsResult(items: [a0, a1], activeIndex: 1);
+      repo.branchHistory = [userMessage('u1', 'q'), a0];
+      await setUpContainer();
+      await controller().switchSibling('a1', 1);
+      expect(repo.branchCalls, ['a0']);
+    });
+
+    test('a message without siblings is left alone', () async {
+      repo.history = [userMessage('u1', 'q'), a0];
+      repo.siblings['a0'] = SiblingsResult(items: [a0], activeIndex: 0);
+      await setUpContainer();
+      await controller().switchSibling('a0', 1);
+      expect(repo.branchCalls, isEmpty);
+      expect(state().switchingBranch, isFalse);
+    });
+
+    test('a failed switch surfaces the error and releases the switcher', () async {
+      repo.history = [userMessage('u1', 'q'), a1];
+      repo.siblings['a1'] = SiblingsResult(items: [a0, a1], activeIndex: 1);
+      await setUpContainer();
+      repo.branchHistory = null;
+      repo.siblings['a1'] = const SiblingsResult(items: [], activeIndex: 0);
+      await controller().switchSibling('a1', -1);
+      expect(repo.branchCalls, isEmpty);
+      expect(state().switchingBranch, isFalse);
+    });
+
+    test('editing a user message streams the reply into a new branch', () async {
+      repo.history = [
+        userMessage('u1', 'first question'),
+        assistantFrom({'id': 'a1', 'content': 'first answer'}),
+        userMessage('u2', 'second question', parentId: 'a1'),
+        assistantFrom({'id': 'a2', 'content': 'second answer'}),
+      ];
+      await setUpContainer();
+
+      await controller().editMessage('u2', 'second question, rephrased');
+      await pumpEventQueue();
+      expect(repo.editCalls.single.messageId, 'u2');
+      expect(repo.editCalls.single.content, 'second question, rephrased');
+      expect(repo.keys.single, isNotNull, reason: 'edits carry an Idempotency-Key');
+      expect(state().sending, isTrue);
+      final msgs = state().messages;
+      expect(msgs.map((m) => m.id).take(2), ['u1', 'a1'], reason: 'the branch root stays');
+      expect(msgs[2].isPendingUser, isTrue);
+      expect(msgs[2].content, 'second question, rephrased');
+      expect(msgs[2].parentId, 'a1');
+      expect(msgs[3].streaming, isTrue);
+      expect(msgs, hasLength(4), reason: 'the old reply a2 is gone — the branch changed');
+
+      final turn = repo.turn!;
+      await emit(
+        turn,
+        const UserMessageEvent(
+          data: {
+            'id': 'u3',
+            'content': 'second question, rephrased',
+            'parent_id': 'a1',
+            'generation_id': 'g3',
+            'siblings': {'index': 1, 'count': 2},
+          },
+        ),
+      );
+      expect(state().messages[2].id, 'u3');
+      expect(state().messages[2].parentId, 'a1');
+      expect(state().messages[2].siblings?.count, 2);
+      await emit(turn, const TokenEvent(token: 'New '));
+      await emit(turn, const TokenEvent(token: 'answer'));
+      expect(state().messages.last.content, 'New answer');
+      await emit(
+        turn,
+        const AssistantMessageEvent(
+          data: {'id': 'a3', 'content': 'New answer', 'parent_id': 'u3', 'generation_id': 'g3'},
+        ),
+      );
+      expect(state().messages.map((m) => m.id), ['u1', 'a1', 'u3', 'a3']);
+      expect(state().messages.last.parentId, 'u3');
+      expect(state().sending, isFalse);
+    });
+
+    test('stop works on an edited turn', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({'id': 'a1', 'content': 'a'}),
+      ];
+      await setUpContainer();
+      await controller().editMessage('u1', 'q2');
+      await pumpEventQueue();
+      await emit(repo.turn!, const TokenEvent(token: 'part'));
+      await controller().stop();
+      await pumpEventQueue();
+      expect(state().sending, isFalse);
+      expect(state().messages.last.interrupted, isTrue);
+      expect(state().messages.last.content, 'part');
+      expect(repo.resumeCalls, isEmpty, reason: 'a user stop is never resumed');
+    });
+
+    test('a failed edit puts the branch back', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({'id': 'a1', 'content': 'a'}),
+        userMessage('u2', 'q2', parentId: 'a1'),
+        assistantFrom({'id': 'a2', 'content': 'b'}),
+      ];
+      await setUpContainer();
+      repo.editError = ApiException(code: 'network_error', message: 'offline');
+      await controller().editMessage('u1', 'changed');
+      await pumpEventQueue();
+      expect(state().messages.map((m) => m.id), ['u1', 'a1', 'u2', 'a2']);
+      expect(state().messages.first.content, 'q');
+      expect(state().sending, isFalse);
+      expect(state().error, 'offline');
+    });
+  });
+
+  // ── Phase 3: resumable streams, attach, background ──────────────────
+
+  group('resume & attach', () {
+    const userWithGeneration = UserMessageEvent(
+      data: {'id': 'u1', 'content': 'hello', 'generation_id': 'g1'},
+    );
+
+    test('a transport drop mid-stream reconnects once after the last seq and continues the bubble',
+        () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, userWithGeneration);
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      repo.lastTurn!.lastEventId = '3';
+
+      await emit(turn, const ErrorEvent(message: 'socket closed', code: 'network_error'));
+      expect(repo.resumeCalls, [(generationId: 'g1', after: '3')]);
+      expect(state().sending, isTrue, reason: 'still streaming — into the same bubble');
+      expect(state().error, isNull);
+      expect(state().messages.last.content, 'Hel');
+      expect(state().messages.last.streaming, isTrue);
+
+      final resumed = repo.turn!;
+      expect(resumed, isNot(same(turn)));
+      await emit(resumed, const TokenEvent(token: 'lo'));
+      expect(state().messages.last.content, 'Hello', reason: 'replay continues the buffer');
+      await emit(
+        resumed,
+        const AssistantMessageEvent(data: {'id': 'a1', 'content': 'Hello', 'generation_id': 'g1'}),
+      );
+      expect(state().messages.map((m) => m.id), ['u1', 'a1']);
+      expect(state().messages.last.generationId, 'g1');
+      expect(state().sending, isFalse);
+    });
+
+    test('a drop of the resumed stream is not resumed again', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, userWithGeneration);
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
+      expect(repo.resumeCalls, hasLength(1));
+
+      await emit(repo.turn!, const ErrorEvent(message: 'drop again', code: 'network_error'));
+      expect(repo.resumeCalls, hasLength(1), reason: 'one reconnect per turn');
+      expect(state().sending, isFalse);
+      expect(state().error, 'drop again');
+      expect(state().messages.last.content, 'Hel');
+      expect(state().messages.last.streaming, isFalse);
+    });
+
+    test('a clean close without a terminal event is treated as a drop too', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, userWithGeneration);
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      await turn.close();
+      await pumpEventQueue();
+      expect(repo.resumeCalls.single.generationId, 'g1');
+      expect(state().sending, isTrue);
+    });
+
+    test('a failed reconnect falls back to the error path', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, userWithGeneration);
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      repo.resumeError =
+          ApiException(code: 'not_found', message: 'generation expired', statusCode: 404);
+      await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
+      expect(state().sending, isFalse);
+      expect(state().error, 'generation expired');
+      expect(state().messages.last.content, 'Hel', reason: 'partial text is kept');
+      expect(state().messages.last.streaming, isFalse);
+    });
+
+    test('a drop before the generation id is known is not resumable', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
+      expect(repo.resumeCalls, isEmpty);
+      expect(state().sending, isFalse);
+      expect(state().error, 'drop');
+    });
+
+    test('a WebSocket drop replays from the first frame without doubling the text', () async {
+      await setUpContainer(transport: StreamTransport.websocket);
+      final turn = await send('hello');
+      await emit(turn, userWithGeneration);
+      await emit(turn, const TokenEvent(token: 'Hel'));
+      await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
+      expect(repo.resumeCalls, [(generationId: 'g1', after: null)]);
+
+      final resumed = repo.turn!;
+      await emit(resumed, userWithGeneration);
+      await emit(resumed, const TokenEvent(token: 'Hel'));
+      await emit(resumed, const TokenEvent(token: 'lo'));
+      expect(state().messages.last.content, 'Hello');
+      expect(state().messages.where((m) => m.role == MessageRole.user), hasLength(1));
+    });
+
+    test('opening a chat with a running generation attaches to it', () async {
+      repo.history = [userMessage('u1', 'hello')];
+      repo.activeGen = const ActiveGeneration(generationId: 'g9', status: 'running');
+      await setUpContainer();
+
+      expect(repo.resumeCalls, [(generationId: 'g9', after: null)]);
+      expect(state().sending, isTrue);
+      expect(state().messages.map((m) => m.id).first, 'u1');
+      expect(state().messages.last.streaming, isTrue);
+      expect(state().messages.last.generationId, 'g9');
+
+      final turn = repo.turn!;
+      await emit(
+        turn,
+        const UserMessageEvent(data: {'id': 'u1', 'content': 'hello', 'generation_id': 'g9'}),
+      );
+      expect(state().messages, hasLength(2), reason: 'the replayed user message is already there');
+      await emit(turn, const TokenEvent(token: 'Hi!'));
+      await emit(
+        turn,
+        const AssistantMessageEvent(data: {'id': 'a9', 'content': 'Hi!', 'generation_id': 'g9'}),
+      );
+      expect(state().messages.map((m) => m.id), ['u1', 'a9']);
+      expect(state().sending, isFalse);
+    });
+
+    test('a replayed user message missing from history is inserted before the bubble', () async {
+      repo.history = [
+        userMessage('u0', 'earlier'),
+        assistantFrom({'id': 'a0', 'content': 'x'}),
+      ];
+      repo.activeGen = const ActiveGeneration(generationId: 'g9', status: 'running');
+      await setUpContainer();
+      await emit(
+        repo.turn!,
+        const UserMessageEvent(data: {'id': 'u1', 'content': 'hello', 'generation_id': 'g9'}),
+      );
+      expect(state().messages.map((m) => m.id).take(3), ['u0', 'a0', 'u1']);
+      expect(state().messages.last.streaming, isTrue);
+    });
+
+    test('a finished generation is not attached', () async {
+      repo.history = [userMessage('u1', 'hello')];
+      repo.activeGen = const ActiveGeneration(generationId: 'g9', status: 'done');
+      await setUpContainer();
+      expect(repo.resumeCalls, isEmpty);
+      expect(state().sending, isFalse);
+      expect(state().messages, hasLength(1));
+    });
+
+    test('sendInBackground posts to /background, keeps the persisted user message and attaches',
+        () async {
+      await setUpContainer();
+      repo.backgroundResult = BackgroundSend(
+        generationId: 'g5',
+        userMessage: userMessage('u5', 'later'),
+      );
+      await controller().sendInBackground('later');
+      await pumpEventQueue();
+      expect(repo.backgroundCalls, ['later']);
+      expect(repo.keys.single, isNotNull, reason: 'background sends carry an Idempotency-Key');
+      expect(repo.resumeCalls, [(generationId: 'g5', after: null)]);
+      expect(state().sending, isTrue);
+      expect(state().messages.first.id, 'u5');
+      expect(state().messages.last.streaming, isTrue);
+      expect(state().messages.last.generationId, 'g5');
+
+      final turn = repo.turn!;
+      await emit(turn, const TokenEvent(token: 'Done'));
+      await emit(
+        turn,
+        const AssistantMessageEvent(data: {'id': 'a5', 'content': 'Done', 'generation_id': 'g5'}),
+      );
+      expect(state().messages.map((m) => m.id), ['u5', 'a5']);
+      expect(state().sending, isFalse);
+    });
+
+    test('a refused background send drops the placeholder', () async {
+      await setUpContainer();
+      repo.backgroundError = ApiException(code: 'busy', message: 'generation in progress');
+      await controller().sendInBackground('later');
+      await pumpEventQueue();
+      expect(state().sending, isFalse);
+      expect(state().error, 'generation in progress');
+      expect(state().messages.single.role, MessageRole.user);
+    });
+
+    test('every send attempt gets a fresh Idempotency-Key', () async {
+      await setUpContainer();
+      await send('one');
+      await emit(repo.turn!, const AssistantMessageEvent(data: {'id': 'a1', 'content': 'x'}));
+      await send('two');
+      await emit(repo.turn!, const AssistantMessageEvent(data: {'id': 'a2', 'content': 'y'}));
+      expect(repo.keys, hasLength(2));
+      expect(repo.keys.toSet(), hasLength(2), reason: 'distinct UUIDs');
+      expect(repo.keys.first, matches(RegExp(r'^[0-9a-f-]{36}$')));
+    });
+  });
+
+  // ── Phase 3: quota ────────────────────────────────────────────────────
+
+  group('quota', () {
+    test('a 429 quota_exceeded on send raises the app-wide banner and drops the placeholder',
+        () async {
+      await setUpContainer();
+      repo.openError = quotaException();
+      await controller().send('hello');
+      await pumpEventQueue();
+      final q = quota();
+      expect(q, isNotNull);
+      expect(q!.resetsAt?.toUtc().month, 12);
+      expect(q.budgetUsd, 10);
+      expect(q.usedUsd, 10.2);
+      expect(q.figures, r'$10.20 of $10.00 spent');
+      expect(state().sending, isFalse);
+      expect(state().error, isNull, reason: 'the banner replaces the inline error');
+      expect(state().messages.single.role, MessageRole.user);
+    });
+
+    test('a quota_exceeded error frame does the same', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(
+        turn,
+        const ErrorEvent(
+          message: 'budget spent',
+          code: 'quota_exceeded',
+          details: {
+            'budget_tokens_per_month': 1000,
+            'used_tokens': 1200,
+            'resets_at': '2026-12-01T00:00:00Z',
+          },
+        ),
+      );
+      final q = quota();
+      expect(q?.budgetTokens, 1000);
+      expect(q?.figures, '1.2k of 1k tokens used');
+      expect(state().sending, isFalse);
+      expect(state().error, isNull);
+      expect(state().messages, hasLength(1));
+    });
+
+    test('a refused edit keeps the branch intact', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({'id': 'a1', 'content': 'a'}),
+      ];
+      await setUpContainer();
+      repo.editError = quotaException();
+      await controller().editMessage('u1', 'changed');
+      await pumpEventQueue();
+      expect(quota(), isNotNull);
+      expect(state().messages.map((m) => m.id), ['u1', 'a1']);
+      expect(state().sending, isFalse);
+    });
+
+    test('refreshQuota clears the banner once /usage/me allows turns again', () async {
+      await setUpContainer();
+      repo.openError = quotaException();
+      await controller().send('hello');
+      await pumpEventQueue();
+      expect(quota(), isNotNull);
+
+      usageRepo.summary = usageSummary(remainingUsd: 0);
+      expect(await controller().refreshQuota(), isFalse);
+      expect(quota(), isNotNull, reason: 'still exhausted');
+      expect(usageRepo.meCalls, 1);
+
+      usageRepo.summary = usageSummary(remainingUsd: 2.5);
+      expect(await controller().refreshQuota(), isTrue);
+      expect(quota(), isNull);
+      expect(usageRepo.meCalls, 2);
+
+      // Sending works again.
+      repo.openError = null;
+      await send('again');
+      expect(state().sending, isTrue);
+    });
+  });
+
+  // ── Phase 3: feedback ─────────────────────────────────────────────────
+
+  group('feedback', () {
+    test('setFeedback updates the message optimistically and posts the rating', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        assistantFrom({'id': 'a1', 'content': 'a'}),
+      ];
+      await setUpContainer();
+      await controller().setFeedback('a1', -1, comment: 'wrong');
+      expect(repo.feedbackCalls.single, (messageId: 'a1', rating: -1, comment: 'wrong'));
+      expect(state().messages.last.feedback?.isDown, isTrue);
+      expect(state().messages.last.feedback?.comment, 'wrong');
+
+      await controller().clearFeedback('a1');
+      expect(repo.feedbackCalls.last.rating, isNull);
+      expect(state().messages.last.feedback, isNull);
+    });
+
+    test('a failed feedback call reverts the message', () async {
+      repo.history = [
+        userMessage('u1', 'q'),
+        ChatMessage.fromJson({
+          'id': 'a1',
+          'session_id': session,
+          'role': 'assistant',
+          'content': 'a',
+          'created_at': '2026-01-01T00:00:00Z',
+          'meta': {
+            'feedback': {'rating': 1, 'comment': null},
+          },
+        }),
+      ];
+      await setUpContainer();
+      expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reflected from history');
+      repo.feedbackError = ApiException(code: 'network_error', message: 'offline');
+      await controller().setFeedback('a1', -1);
+      expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reverted');
+      expect(state().error, 'offline');
+      await controller().clearFeedback('a1');
+      expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reverted again');
     });
   });
 }

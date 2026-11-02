@@ -60,6 +60,20 @@ void main() {
       expect(second.id, '7', reason: 'last event id persists');
     });
 
+    test('exposes the id: of every frame as the replay cursor', () {
+      final d = SseDecoder();
+      final events = d.feed(
+        'id: 1\ndata: {"type":"user_message","data":{"generation_id":"g1"}}\n\n'
+        'id: 2\ndata: {"type":"token","data":"a"}\n\n',
+      );
+      expect(events.map((e) => e.id), ['1', '2']);
+      expect(jsonDecode(events.first.data)['data']['generation_id'], 'g1');
+      // A frame without its own id keeps the last one (Last-Event-ID semantics).
+      expect(d.feed('data: {"type":"done","data":{}}\n\n').single.id, '2');
+      // `id:` after `data:` applies to the same frame.
+      expect(d.feed('data: x\nid: 7\n\n').single.id, '7');
+    });
+
     test('strips exactly one leading space after the colon', () {
       final d = SseDecoder();
       expect(d.feed('data:x\n\n').single.data, 'x');

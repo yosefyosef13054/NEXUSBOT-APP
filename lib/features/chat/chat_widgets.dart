@@ -9,11 +9,12 @@ import '../../core/theme.dart';
 import 'approval_card.dart';
 import 'chat_models.dart';
 import 'code_block.dart';
+import 'message_extras.dart';
 import 'tool_chips.dart';
 
 // ============================================================================
 // MessageBubble — wraps the bubble with tool chips above, citations below,
-// and a row of message-level actions (copy, regenerate).
+// and a row of message-level actions (copy, regenerate, edit, feedback).
 // ============================================================================
 
 class MessageBubble extends StatefulWidget {
@@ -26,6 +27,14 @@ class MessageBubble extends StatefulWidget {
     this.onApprovalDecision,
     this.approvalBusy = false,
     this.onCitationTap,
+    this.onEdit,
+    this.editing = false,
+    this.onSubmitEdit,
+    this.onCancelEdit,
+    this.onSwitchSibling,
+    this.switchingBranch = false,
+    this.onFeedback,
+    this.onMemoriesTap,
   });
 
   final ChatMessage message;
@@ -41,6 +50,24 @@ class MessageBubble extends StatefulWidget {
   final ValueChanged<ApprovalDecision>? onApprovalDecision;
   final bool approvalBusy;
   final ValueChanged<Citation>? onCitationTap;
+
+  /// Shows **Edit** in a user message's actions; null hides it.
+  final VoidCallback? onEdit;
+
+  /// The bubble renders an inline editor instead of its text.
+  final bool editing;
+  final ValueChanged<String>? onSubmitEdit;
+  final VoidCallback? onCancelEdit;
+
+  /// "‹ i/n ›" under a message with siblings; receives `-1` / `+1`.
+  final ValueChanged<int>? onSwitchSibling;
+  final bool switchingBranch;
+
+  /// Thumbs up / down on a reply (receives `1` / `-1`); null hides them.
+  final ValueChanged<int>? onFeedback;
+
+  /// Tap on the "used N memories" caption.
+  final VoidCallback? onMemoriesTap;
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -78,7 +105,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         behavior: HitTestBehavior.translucent,
         onLongPress: () => setState(() => _showActions = !_showActions),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: NexusSpacing.sm),
+          padding:
+              const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: NexusSpacing.sm),
           child: Column(
             crossAxisAlignment: crossAxis,
             children: [
@@ -88,22 +116,28 @@ class _MessageBubbleState extends State<MessageBubble> {
               ],
               _BubbleContainer(
                 isUser: _isUser,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (approval == null || message.content.isNotEmpty)
-                      _BubbleContent(message: message),
-                    if (approval != null) ...[
-                      if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.md),
-                      ApprovalCard(
-                        approval: approval,
-                        busy: widget.approvalBusy,
-                        onDecision: widget.onApprovalDecision,
+                child: widget.editing
+                    ? _InlineEditor(
+                        initial: message.content,
+                        onSubmit: widget.onSubmitEdit,
+                        onCancel: widget.onCancelEdit,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (approval == null || message.content.isNotEmpty)
+                            _BubbleContent(message: message),
+                          if (approval != null) ...[
+                            if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.md),
+                            ApprovalCard(
+                              approval: approval,
+                              busy: widget.approvalBusy,
+                              onDecision: widget.onApprovalDecision,
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ],
-                ),
               ),
               if (message.interrupted && !message.streaming) ...[
                 const SizedBox(height: NexusSpacing.xs),
@@ -113,12 +147,17 @@ class _MessageBubbleState extends State<MessageBubble> {
                 const SizedBox(height: NexusSpacing.sm),
                 CitationsStrip(citations: message.citations, onTap: widget.onCitationTap),
               ],
+              if (!_isUser && message.memoriesUsed.isNotEmpty && !message.streaming) ...[
+                const SizedBox(height: NexusSpacing.xs),
+                MemoriesCaption(count: message.memoriesUsed.length, onTap: widget.onMemoriesTap),
+              ],
               AnimatedCrossFade(
                 duration: const Duration(milliseconds: 150),
-                crossFadeState:
-                    (_showActions || widget.isLastAssistant) && !message.streaming
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
+                crossFadeState: (_showActions || widget.isLastAssistant || _hasSiblings) &&
+                        !message.streaming &&
+                        !widget.editing
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
                 firstChild: const SizedBox(height: 4),
                 secondChild: Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -129,6 +168,14 @@ class _MessageBubbleState extends State<MessageBubble> {
                     copied: _copied,
                     onCopy: _copy,
                     onRegenerate: !_isUser && widget.isLastAssistant ? widget.onRegenerate : null,
+                    onEdit: _isUser && !message.isPendingUser ? widget.onEdit : null,
+                    siblings: _hasSiblings ? message.siblings : null,
+                    onSwitchSibling: widget.onSwitchSibling,
+                    switchingBranch: widget.switchingBranch,
+                    feedback: message.feedback,
+                    onFeedback: !_isUser && !message.streaming && message.approval == null
+                        ? widget.onFeedback
+                        : null,
                   ),
                 ),
               ),
@@ -138,6 +185,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       ),
     );
   }
+
+  bool get _hasSiblings => widget.message.siblings?.hasSiblings == true;
 }
 
 class _MessageActionsRow extends StatelessWidget {
@@ -148,6 +197,12 @@ class _MessageActionsRow extends StatelessWidget {
     required this.onCopy,
     required this.onRegenerate,
     this.model,
+    this.onEdit,
+    this.siblings,
+    this.onSwitchSibling,
+    this.switchingBranch = false,
+    this.feedback,
+    this.onFeedback,
   });
 
   final bool isUser;
@@ -158,6 +213,12 @@ class _MessageActionsRow extends StatelessWidget {
 
   /// The model that produced the reply — shown as a muted caption.
   final String? model;
+  final VoidCallback? onEdit;
+  final SiblingInfo? siblings;
+  final ValueChanged<int>? onSwitchSibling;
+  final bool switchingBranch;
+  final MessageFeedback? feedback;
+  final ValueChanged<int>? onFeedback;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +226,14 @@ class _MessageActionsRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
       children: [
+        if (siblings != null) ...[
+          SiblingSwitcher(
+            siblings: siblings!,
+            onSwitch: onSwitchSibling,
+            busy: switchingBranch,
+          ),
+          const SizedBox(width: 8),
+        ],
         Text(
           DateFormat.jm().format(timestamp.toLocal()),
           style: TextStyle(color: t.textMuted, fontSize: 11),
@@ -190,6 +259,15 @@ class _MessageActionsRow extends StatelessWidget {
           color: copied ? NexusColors.success : t.textMuted,
           onTap: onCopy,
         ),
+        if (onEdit != null) ...[
+          const SizedBox(width: 4),
+          _ActionIcon(
+            icon: Icons.edit_outlined,
+            tooltip: 'Edit',
+            color: t.textMuted,
+            onTap: onEdit!,
+          ),
+        ],
         if (onRegenerate != null) ...[
           const SizedBox(width: 4),
           _ActionIcon(
@@ -199,6 +277,99 @@ class _MessageActionsRow extends StatelessWidget {
             onTap: onRegenerate!,
           ),
         ],
+        if (onFeedback != null) ...[
+          const SizedBox(width: 4),
+          FeedbackButtons(feedback: feedback, onRate: onFeedback),
+        ],
+      ],
+    );
+  }
+}
+
+/// Replaces a user message's text while it is being edited: a text field
+/// plus **Save** (sends the new text as a sibling of the message) and
+/// **Cancel**.
+class _InlineEditor extends StatefulWidget {
+  const _InlineEditor({required this.initial, required this.onSubmit, required this.onCancel});
+  final String initial;
+  final ValueChanged<String>? onSubmit;
+  final VoidCallback? onCancel;
+
+  @override
+  State<_InlineEditor> createState() => _InlineEditorState();
+}
+
+class _InlineEditorState extends State<_InlineEditor> {
+  late final TextEditingController _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty || text == widget.initial.trim()) {
+      widget.onCancel?.call();
+      return;
+    }
+    widget.onSubmit?.call(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _ctrl,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 8,
+          style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
+          cursorColor: Colors.white,
+          decoration: const InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: Color(0x26000000),
+            hintText: 'Edit your message',
+            hintStyle: TextStyle(color: Colors.white70),
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(NexusRadius.sm),
+              borderSide: BorderSide(color: Colors.white38),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(NexusRadius.sm),
+              borderSide: BorderSide(color: Colors.white),
+            ),
+          ),
+        ),
+        const SizedBox(height: NexusSpacing.sm),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: widget.onCancel,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: NexusSpacing.xs),
+            FilledButton.icon(
+              onPressed: _submit,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: NexusColors.crimsonDeep,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(Icons.send_rounded, size: 14),
+              label: const Text('Save & send'),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -477,7 +648,11 @@ class CitationsStrip extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.description_outlined, size: 14, color: NexusColors.crimson),
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 14,
+                          color: NexusColors.crimson,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -549,6 +724,9 @@ class Composer extends StatefulWidget {
     required this.onToggleTools,
     required this.onStop,
     this.stopping = false,
+    this.enabled = true,
+    this.disabledHint,
+    this.onSendBackground,
     this.toolsSummary,
     this.onPickTools,
     this.knowledgeLabel,
@@ -558,6 +736,15 @@ class Composer extends StatefulWidget {
 
   final void Function(String) onSend;
   final bool sending;
+
+  /// False while sending is not allowed (the workspace budget is spent):
+  /// the field and the send button are disabled and [disabledHint] shown.
+  final bool enabled;
+  final String? disabledHint;
+
+  /// "Send in background" in the overflow menu: the server produces the
+  /// reply even if the app goes away. Null hides the menu.
+  final void Function(String)? onSendBackground;
 
   /// Stop was requested; waiting for the server to finalise the reply.
   final bool stopping;
@@ -599,8 +786,17 @@ class _ComposerState extends State<Composer> {
 
   void _send() {
     final text = _controller.text.trim();
-    if (text.isEmpty || widget.sending) return;
+    if (text.isEmpty || widget.sending || !widget.enabled) return;
     widget.onSend(text);
+    _controller.clear();
+    _focus.requestFocus();
+  }
+
+  void _sendBackground() {
+    final text = _controller.text.trim();
+    final handler = widget.onSendBackground;
+    if (text.isEmpty || widget.sending || !widget.enabled || handler == null) return;
+    handler(text);
     _controller.clear();
     _focus.requestFocus();
   }
@@ -608,9 +804,8 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final toolsLabel = widget.useTools && widget.toolsSummary != null
-        ? 'Tools · ${widget.toolsSummary}'
-        : 'Tools';
+    final toolsLabel =
+        widget.useTools && widget.toolsSummary != null ? 'Tools · ${widget.toolsSummary}' : 'Tools';
     return SafeArea(
       top: false,
       child: Container(
@@ -690,21 +885,48 @@ class _ComposerState extends State<Composer> {
                       child: TextField(
                         controller: _controller,
                         focusNode: _focus,
+                        enabled: widget.enabled,
                         minLines: 1,
                         maxLines: 6,
                         textInputAction: TextInputAction.newline,
-                        decoration: const InputDecoration(
-                          hintText: 'Message NexusBot…',
+                        decoration: InputDecoration(
+                          hintText: widget.enabled
+                              ? 'Message NexusBot…'
+                              : (widget.disabledHint ?? 'Sending is paused'),
                           border: InputBorder.none,
                           filled: false,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ),
+                    if (widget.onSendBackground != null) ...[
+                      const SizedBox(width: 2),
+                      PopupMenuButton<String>(
+                        tooltip: 'More',
+                        enabled: widget.enabled && !widget.sending,
+                        icon: Icon(Icons.more_vert_rounded, size: 18, color: t.textMuted),
+                        onSelected: (v) {
+                          if (v == 'background') _sendBackground();
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'background',
+                            child: Row(
+                              children: [
+                                Icon(Icons.cloud_sync_outlined, size: 16),
+                                SizedBox(width: NexusSpacing.sm),
+                                Text('Send in background'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(width: 4),
                     _SendOrStop(
                       sending: widget.sending,
                       stopping: widget.stopping,
+                      enabled: widget.enabled,
                       onSend: _send,
                       onStop: widget.onStop,
                     ),
@@ -798,10 +1020,12 @@ class _SendOrStop extends StatelessWidget {
     required this.stopping,
     required this.onSend,
     required this.onStop,
+    this.enabled = true,
   });
 
   final bool sending;
   final bool stopping;
+  final bool enabled;
   final VoidCallback onSend;
   final VoidCallback onStop;
 
@@ -809,7 +1033,7 @@ class _SendOrStop extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final VoidCallback? onTap;
-    if (stopping) {
+    if (stopping || (!enabled && !sending)) {
       onTap = null;
     } else if (sending) {
       onTap = onStop;
@@ -823,10 +1047,10 @@ class _SendOrStop extends StatelessWidget {
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          gradient: sending ? null : NexusColors.redGradient,
-          color: sending ? t.surfaceHigher : null,
+          gradient: sending || !enabled ? null : NexusColors.redGradient,
+          color: sending || !enabled ? t.surfaceHigher : null,
           borderRadius: const BorderRadius.all(NexusRadius.md),
-          boxShadow: sending
+          boxShadow: sending || !enabled
               ? null
               : const [
                   BoxShadow(
@@ -850,7 +1074,11 @@ class _SendOrStop extends StatelessWidget {
               )
             : Icon(
                 sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                color: sending ? t.textPrimary : Colors.white,
+                color: sending
+                    ? t.textPrimary
+                    : enabled
+                        ? Colors.white
+                        : t.textMuted,
                 size: 18,
               ),
       ),

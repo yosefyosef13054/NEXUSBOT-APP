@@ -156,7 +156,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             onPressed: () => context.go(AppRoutes.login),
                             child: const Text(
                               'Sign in',
-                              style: TextStyle(color: NexusColors.crimson, fontWeight: FontWeight.w700),
+                              style: TextStyle(
+                                color: NexusColors.crimson,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],

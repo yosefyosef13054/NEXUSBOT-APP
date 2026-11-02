@@ -151,8 +151,7 @@ void main() {
       var signedOut = false;
       final refresher = TokenRefresher(
         tokens: tokens,
-        refresh: (_) async =>
-            throw ApiException(code: 'network_error', message: 'offline'),
+        refresh: (_) async => throw ApiException(code: 'network_error', message: 'offline'),
       );
       refresher.onSignedOut.listen((_) => signedOut = true);
 

@@ -42,6 +42,13 @@ class ApiException implements Exception {
   bool get isAuth => code == 'unauthorized' || statusCode == 401;
   bool get isRateLimited => code == 'rate_limited' || statusCode == 429;
 
+  /// The active organization's monthly budget is spent (HTTP 429, code
+  /// `quota_exceeded`); `details` carries the budget, the usage and `resets_at`.
+  bool get isQuotaExceeded => code == 'quota_exceeded';
+  bool get isForbidden => code == 'forbidden' || statusCode == 403;
+  bool get isNotFound => code == 'not_found' || statusCode == 404;
+  bool get isConflict => code == 'conflict' || statusCode == 409;
+
   /// First 8 characters of [requestId]: short enough for a banner, long
   /// enough to find the request in server logs.
   String? get shortRequestId {
@@ -63,5 +70,4 @@ class ApiException implements Exception {
 }
 
 /// Human-readable text for any error thrown by a repository call.
-String errorText(Object error) =>
-    error is ApiException ? error.userMessage : error.toString();
+String errorText(Object error) => error is ApiException ? error.userMessage : error.toString();

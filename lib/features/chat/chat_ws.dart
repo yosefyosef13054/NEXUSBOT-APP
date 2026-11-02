@@ -11,8 +11,10 @@ import 'chat_models.dart';
 ///
 /// Protocol:
 /// 1. connect without a token in the query string;
-/// 2. send `{"type":"auth","token":"<jwt>"}` as the first frame and wait for
-///    `auth_ok` (an `error` frame / close before that fails [connect]);
+/// 2. send `{"type":"auth","token":"<jwt>","org_id":"<active org>"}` as the
+///    first frame (`org_id` only when a workspace other than the personal
+///    one is active) and wait for `auth_ok` (an `error` frame / close
+///    before that fails [connect]);
 /// 3. send `user_message`; the server streams the same event frames as SSE;
 /// 4. `stop` cancels the in-flight generation — the server still emits `done`
 ///    and `assistant_message` (both `interrupted: true`), so keep listening;
@@ -40,6 +42,7 @@ class ChatWebSocket {
   static Future<ChatWebSocket> connect({
     required String sessionId,
     required String token,
+    String? orgId,
     String? baseUrl,
   }) async {
     final uri = Uri.parse('${baseUrl ?? Env.wsBaseUrl}/ws/sessions/$sessionId');
@@ -51,7 +54,11 @@ class ChatWebSocket {
     }
 
     final ws = ChatWebSocket._(channel).._listen();
-    ws._send({'type': 'auth', 'token': token});
+    ws._send({
+      'type': 'auth',
+      'token': token,
+      if (orgId != null && orgId.isNotEmpty) 'org_id': orgId,
+    });
     try {
       await ws._authed.future.timeout(authTimeout);
     } on TimeoutException {

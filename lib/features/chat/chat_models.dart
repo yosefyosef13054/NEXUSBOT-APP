@@ -20,6 +20,9 @@ class ChatSession {
     this.summary,
     this.model,
     this.meta = const {},
+    this.orgId,
+    this.assistantId,
+    this.activeLeafId,
   });
 
   factory ChatSession.fromJson(Map<String, dynamic> j) => ChatSession(
@@ -29,6 +32,9 @@ class ChatSession {
         summary: j['summary'] as String?,
         model: j['model'] as String?,
         meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+        orgId: j['org_id'] as String?,
+        assistantId: j['assistant_id'] as String?,
+        activeLeafId: j['active_leaf_id'] as String?,
         createdAt: DateTime.parse(j['created_at'] as String),
         updatedAt: DateTime.parse(j['updated_at'] as String),
       );
@@ -41,6 +47,16 @@ class ChatSession {
   /// The session's model id (`PATCH /sessions/{id} {model}`); null = the
   /// user's / server's default.
   final String? model;
+
+  /// The organization the session belongs to.
+  final String? orgId;
+
+  /// The assistant (persona) the session uses for its defaults
+  /// (`PATCH /sessions/{id} {assistant_id}`); null = plain chat.
+  final String? assistantId;
+
+  /// The message at the tip of the active branch (see `POST /sessions/{id}/branch`).
+  final String? activeLeafId;
 
   /// Free-form session metadata. `meta.collection_ids` is the knowledge
   /// scope (see [collectionIds]).
@@ -56,7 +72,14 @@ class ChatSession {
     return raw.map((e) => e.toString()).toList();
   }
 
-  ChatSession copyWith({String? title, String? model, Map<String, dynamic>? meta}) =>
+  ChatSession copyWith({
+    String? title,
+    String? model,
+    Map<String, dynamic>? meta,
+    String? assistantId,
+    bool clearAssistantId = false,
+    String? activeLeafId,
+  }) =>
       ChatSession(
         id: id,
         title: title ?? this.title,
@@ -64,9 +87,99 @@ class ChatSession {
         summary: summary,
         model: model ?? this.model,
         meta: meta ?? this.meta,
+        orgId: orgId,
+        assistantId: clearAssistantId ? null : (assistantId ?? this.assistantId),
+        activeLeafId: activeLeafId ?? this.activeLeafId,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
+}
+
+/// Where a message sits among its siblings — the edits of a user message or
+/// the regenerations of a reply (`MessageRead.siblings`). [index] is
+/// zero-based; [displayIndex] is what the "‹ 2/3 ›" switcher shows.
+class SiblingInfo {
+  const SiblingInfo({required this.index, required this.count});
+
+  factory SiblingInfo.fromJson(Map<String, dynamic> j) => SiblingInfo(
+        index: (j['index'] as num?)?.toInt() ?? 0,
+        count: (j['count'] as num?)?.toInt() ?? 1,
+      );
+
+  final int index;
+  final int count;
+
+  int get displayIndex => (index + 1).clamp(1, count < 1 ? 1 : count);
+  bool get hasSiblings => count > 1;
+}
+
+/// The user's thumbs up / down on a reply (`meta.feedback`).
+class MessageFeedback {
+  const MessageFeedback({required this.rating, this.comment});
+
+  factory MessageFeedback.fromJson(Map<String, dynamic> j) => MessageFeedback(
+        rating: (j['rating'] as num?)?.toInt() ?? 0,
+        comment: j['comment'] as String?,
+      );
+
+  /// `1` or `-1`.
+  final int rating;
+  final String? comment;
+
+  bool get isUp => rating > 0;
+  bool get isDown => rating < 0;
+}
+
+/// `GET /sessions/{id}/messages/{message_id}/siblings`.
+class SiblingsResult {
+  const SiblingsResult({required this.items, required this.activeIndex});
+
+  factory SiblingsResult.fromJson(Map<String, dynamic> j) => SiblingsResult(
+        items: (j['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((m) => ChatMessage.fromJson(m.cast<String, dynamic>()))
+            .toList(),
+        activeIndex: (j['active_index'] as num?)?.toInt() ?? 0,
+      );
+
+  final List<ChatMessage> items;
+
+  /// Index into [items] of the sibling on the active branch.
+  final int activeIndex;
+}
+
+/// `GET /sessions/{id}/generations/active`.
+class ActiveGeneration {
+  const ActiveGeneration({required this.generationId, required this.status, this.startedAt});
+
+  factory ActiveGeneration.fromJson(Map<String, dynamic> j) => ActiveGeneration(
+        generationId: (j['generation_id'] as String?) ?? '',
+        status: (j['status'] as String?) ?? 'running',
+        startedAt: DateTime.tryParse(j['started_at'] as String? ?? ''),
+      );
+
+  final String generationId;
+
+  /// `running` | `done`.
+  final String status;
+  final DateTime? startedAt;
+
+  bool get isRunning => status == 'running' && generationId.isNotEmpty;
+}
+
+/// `POST /sessions/{id}/messages/background` → 202.
+class BackgroundSend {
+  const BackgroundSend({required this.generationId, this.userMessage});
+
+  factory BackgroundSend.fromJson(Map<String, dynamic> j) => BackgroundSend(
+        generationId: (j['generation_id'] as String?) ?? '',
+        userMessage: j['user_message'] is Map
+            ? ChatMessage.fromJson((j['user_message'] as Map).cast<String, dynamic>())
+            : null,
+      );
+
+  final String generationId;
+  final ChatMessage? userMessage;
 }
 
 /// A retrieved chunk the answer was grounded in. Structured since Phase 2:
@@ -295,6 +408,15 @@ List<ToolCall> _toolCallsFrom(Object? raw) => mergeToolCalls(
 ApprovalRequest? _approvalFrom(Object? raw) =>
     raw is Map ? ApprovalRequest.fromJson(raw.cast<String, dynamic>()) : null;
 
+SiblingInfo? _siblingsFrom(Object? raw) =>
+    raw is Map ? SiblingInfo.fromJson(raw.cast<String, dynamic>()) : null;
+
+MessageFeedback? _feedbackFrom(Object? raw) =>
+    raw is Map ? MessageFeedback.fromJson(raw.cast<String, dynamic>()) : null;
+
+List<String> _idsFrom(Object? raw) =>
+    (raw as List? ?? const []).map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+
 /// `meta.status` of a persisted assistant message.
 abstract final class MessageStatus {
   static const ok = 'ok';
@@ -318,6 +440,11 @@ class ChatMessage {
     this.status,
     this.approval,
     this.model,
+    this.parentId,
+    this.siblings,
+    this.feedback,
+    this.memoriesUsed = const [],
+    this.generationId,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) {
@@ -332,6 +459,11 @@ class ChatMessage {
       content: content,
       tokens: (j['tokens'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.parse(j['created_at'] as String),
+      parentId: j['parent_id'] as String?,
+      siblings: _siblingsFrom(j['siblings']),
+      feedback: _feedbackFrom(meta['feedback']),
+      memoriesUsed: _idsFrom(meta['memories_used']),
+      generationId: (meta['generation_id'] ?? j['generation_id']) as String?,
       citations: _citationsFrom(meta['citations']),
       // A `role: "tool"` row *is* one tool run: its meta carries the call,
       // its content the (truncated) output.
@@ -390,10 +522,29 @@ class ChatMessage {
   /// The model id that produced this reply (`meta.model` / `done.data.model`).
   final String? model;
 
+  /// The message this one answers / branches from (null for the root).
+  final String? parentId;
+
+  /// Set when the message has edit / regeneration siblings.
+  final SiblingInfo? siblings;
+
+  /// The user's thumbs up / down on this reply.
+  final MessageFeedback? feedback;
+
+  /// Ids of the memories injected into the turn that produced this reply.
+  final List<String> memoriesUsed;
+
+  /// The generation that produced (or is producing) this reply.
+  final String? generationId;
+
   /// A `role: "tool"` history row — rendered as a chip, never as a bubble.
   bool get isToolRun => role == MessageRole.tool;
 
   bool get awaitingApproval => status == MessageStatus.awaitingApproval;
+
+  /// Optimistic rows the server has not confirmed yet carry this prefix.
+  static const pendingUserPrefix = 'pending-user-';
+  bool get isPendingUser => id.startsWith(pendingUserPrefix);
 
   ChatMessage copyWith({
     String? id,
@@ -407,6 +558,13 @@ class ChatMessage {
     ApprovalRequest? approval,
     bool clearApproval = false,
     String? model,
+    String? parentId,
+    SiblingInfo? siblings,
+    bool clearSiblings = false,
+    MessageFeedback? feedback,
+    bool clearFeedback = false,
+    List<String>? memoriesUsed,
+    String? generationId,
   }) =>
       ChatMessage(
         id: id ?? this.id,
@@ -422,6 +580,11 @@ class ChatMessage {
         status: clearStatus ? null : (status ?? this.status),
         approval: clearApproval ? null : (approval ?? this.approval),
         model: model ?? this.model,
+        parentId: parentId ?? this.parentId,
+        siblings: clearSiblings ? null : (siblings ?? this.siblings),
+        feedback: clearFeedback ? null : (feedback ?? this.feedback),
+        memoriesUsed: memoriesUsed ?? this.memoriesUsed,
+        generationId: generationId ?? this.generationId,
       );
 }
 
@@ -492,6 +655,7 @@ sealed class StreamEvent {
         return ErrorEvent(
           message: (map['message'] as String?) ?? (data is String ? data : 'error'),
           code: map['code'] as String?,
+          details: (map['details'] as Map?)?.cast<String, dynamic>(),
         );
       default:
         return UnknownEvent(type: type);
@@ -509,6 +673,14 @@ class UserMessageEvent extends StreamEvent {
 
   String? get id => data['id'] as String?;
 
+  /// The generation this turn runs under — the handle for reconnecting
+  /// (`GET /sessions/{id}/generations/{generation_id}/events`).
+  String? get generationId => data['generation_id'] as String?;
+
+  /// Set when the message was created by an edit (it then branches off its
+  /// parent instead of continuing the tip).
+  String? get parentId => data['parent_id'] as String?;
+
   ChatMessage toMessage(String sessionId, {DateTime? fallbackCreatedAt}) => ChatMessage(
         id: id ?? 'user-${DateTime.now().microsecondsSinceEpoch}',
         sessionId: (data['session_id'] as String?) ?? sessionId,
@@ -517,6 +689,9 @@ class UserMessageEvent extends StreamEvent {
         createdAt: DateTime.tryParse(data['created_at'] as String? ?? '') ??
             fallbackCreatedAt ??
             DateTime.now(),
+        parentId: parentId,
+        siblings: _siblingsFrom(data['siblings']),
+        generationId: generationId,
       );
 }
 
@@ -586,6 +761,7 @@ class DoneEvent extends StreamEvent {
 
   /// The model id actually used for the turn.
   String? get model => data['model'] as String?;
+  String? get generationId => data['generation_id'] as String?;
 }
 
 /// The persisted assistant message — the canonical end of a turn.
@@ -602,6 +778,11 @@ class AssistantMessageEvent extends StreamEvent {
   bool get awaitingApproval => status == MessageStatus.awaitingApproval;
   ApprovalRequest? get approval => _approvalFrom(data['approval'] ?? _meta['approval']);
   String? get model => (data['model'] as String?) ?? _meta['model'] as String?;
+  String? get generationId =>
+      (data['generation_id'] as String?) ?? _meta['generation_id'] as String?;
+
+  /// Ids of the memories injected into this turn (`meta.memories_used`).
+  List<String> get memoriesUsed => _idsFrom(data['memories_used'] ?? _meta['memories_used']);
 
   ChatMessage toMessage(String sessionId) {
     final meta = _meta;
@@ -618,18 +799,33 @@ class AssistantMessageEvent extends StreamEvent {
       status: status ?? (interrupted ? MessageStatus.interrupted : null),
       approval: approval,
       model: model,
+      parentId: data['parent_id'] as String?,
+      siblings: _siblingsFrom(data['siblings']),
+      feedback: _feedbackFrom(meta['feedback']),
+      memoriesUsed: memoriesUsed,
+      generationId: generationId,
     );
   }
 }
 
 class ErrorEvent extends StreamEvent {
-  const ErrorEvent({required this.message, this.code});
+  const ErrorEvent({required this.message, this.code, this.details});
   final String message;
 
   /// Backend error code (`busy`, `unauthorized`, `rate_limited`, …).
   final String? code;
 
+  /// Structured details, e.g. the budget figures of a `quota_exceeded` frame.
+  final Map<String, dynamic>? details;
+
   bool get isBusy => code == 'busy';
+
+  /// The workspace's monthly budget is spent (same as HTTP 429 `quota_exceeded`).
+  bool get isQuotaExceeded => code == 'quota_exceeded';
+
+  /// The connection died (reported by the transport, not the server) — the
+  /// turn may be resumable through the generation's event replay.
+  bool get isTransportError => code == 'network_error';
 
   /// `conflict` / `not_found` — an approval that was already resolved or
   /// expired (WebSocket transport reports these as error frames).

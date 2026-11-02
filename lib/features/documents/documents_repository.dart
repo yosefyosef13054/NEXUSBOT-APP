@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/paging.dart';
 import '../auth/auth_providers.dart';
+import '../orgs/orgs_repository.dart';
 import 'document_model.dart';
 
 class DocumentsRepository {
@@ -140,12 +141,15 @@ final documentsRepositoryProvider = FutureProvider<DocumentsRepository>((ref) as
 /// The collection the Documents screen is filtered to (null = all). Also the
 /// default target for uploads started from that screen.
 final documentCollectionFilterProvider = StateProvider<String?>((ref) {
-  // Reset the filter when the signed-in user changes.
+  // Reset the filter when the signed-in user or the workspace changes.
   ref.watch(currentUserProvider.select((u) => u.valueOrNull?.id));
+  ref.watch(activeOrgIdProvider);
   return null;
 });
 
+/// The active workspace's documents; reloads when the workspace changes.
 final documentListProvider = FutureProvider.autoDispose<List<Document>>((ref) async {
+  ref.watch(activeOrgIdProvider);
   final repo = await ref.watch(documentsRepositoryProvider.future);
   final collectionId = ref.watch(documentCollectionFilterProvider);
   return repo.list(collectionId: collectionId);

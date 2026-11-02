@@ -65,8 +65,7 @@ class Document {
     return host == null || host.isEmpty ? null : host;
   }
 
-  bool get isInFlight =>
-      status == DocumentStatus.pending || status == DocumentStatus.processing;
+  bool get isInFlight => status == DocumentStatus.pending || status == DocumentStatus.processing;
 }
 
 /// Result of `POST /documents` / `POST /documents/from-url`. [queued] is

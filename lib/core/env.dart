@@ -13,9 +13,7 @@ class Env {
 
   /// WebSocket base URL (no trailing slash). Defaults derived from [apiBaseUrl].
   static String get wsBaseUrl {
-    final replaced = apiBaseUrl
-        .replaceFirst('https://', 'wss://')
-        .replaceFirst('http://', 'ws://');
+    final replaced = apiBaseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
     return replaced;
   }
 

@@ -20,6 +20,8 @@ class AppPrefs {
     required this.streamingEnabled,
     required this.ragByDefault,
     required this.toolsByDefault,
+    this.activeOrgId,
+    this.activeOrgUserId,
   });
 
   final ThemeMode themeMode;
@@ -29,6 +31,16 @@ class AppPrefs {
   final bool ragByDefault;
   final bool toolsByDefault;
 
+  /// The organization the app acts in (`X-Org-Id`); null = the personal
+  /// workspace. Stored together with the user it was chosen by
+  /// ([activeOrgUserId]) so another account on the same device never
+  /// inherits it — read it through [activeOrgIdFor].
+  final String? activeOrgId;
+  final String? activeOrgUserId;
+
+  /// The active organization chosen by [userId], or null (personal).
+  String? activeOrgIdFor(String userId) => activeOrgUserId == userId ? activeOrgId : null;
+
   AppPrefs copyWith({
     ThemeMode? themeMode,
     StreamTransport? transport,
@@ -36,6 +48,9 @@ class AppPrefs {
     bool? streamingEnabled,
     bool? ragByDefault,
     bool? toolsByDefault,
+    String? activeOrgId,
+    String? activeOrgUserId,
+    bool clearActiveOrg = false,
   }) =>
       AppPrefs(
         themeMode: themeMode ?? this.themeMode,
@@ -44,6 +59,8 @@ class AppPrefs {
         streamingEnabled: streamingEnabled ?? this.streamingEnabled,
         ragByDefault: ragByDefault ?? this.ragByDefault,
         toolsByDefault: toolsByDefault ?? this.toolsByDefault,
+        activeOrgId: clearActiveOrg ? null : (activeOrgId ?? this.activeOrgId),
+        activeOrgUserId: clearActiveOrg ? null : (activeOrgUserId ?? this.activeOrgUserId),
       );
 
   static const defaults = AppPrefs(
@@ -63,6 +80,8 @@ class _PrefKeys {
   static const streaming = 'pref.streaming';
   static const rag = 'pref.rag';
   static const tools = 'pref.tools';
+  static const activeOrg = 'pref.activeOrgId';
+  static const activeOrgUser = 'pref.activeOrgUserId';
 }
 
 class PrefsController extends StateNotifier<AppPrefs> {
@@ -71,8 +90,7 @@ class PrefsController extends StateNotifier<AppPrefs> {
   final SharedPreferences _prefs;
 
   static AppPrefs _read(SharedPreferences p) => AppPrefs(
-        themeMode: ThemeMode.values[
-            p.getInt(_PrefKeys.themeMode) ?? ThemeMode.system.index],
+        themeMode: ThemeMode.values[p.getInt(_PrefKeys.themeMode) ?? ThemeMode.system.index],
         // `--dart-define=USE_WEBSOCKET=true` picks the default; Settings wins.
         transport: StreamTransport.values[p.getInt(_PrefKeys.transport) ??
             (Env.useWebSocketStreaming ? StreamTransport.websocket : StreamTransport.sse).index],
@@ -80,6 +98,8 @@ class PrefsController extends StateNotifier<AppPrefs> {
         streamingEnabled: p.getBool(_PrefKeys.streaming) ?? true,
         ragByDefault: p.getBool(_PrefKeys.rag) ?? true,
         toolsByDefault: p.getBool(_PrefKeys.tools) ?? true,
+        activeOrgId: p.getString(_PrefKeys.activeOrg),
+        activeOrgUserId: p.getString(_PrefKeys.activeOrgUser),
       );
 
   Future<void> setThemeMode(ThemeMode m) async {
@@ -110,6 +130,20 @@ class PrefsController extends StateNotifier<AppPrefs> {
   Future<void> setTools(bool v) async {
     state = state.copyWith(toolsByDefault: v);
     await _prefs.setBool(_PrefKeys.tools, v);
+  }
+
+  /// Remembers the organization [userId] works in; null = their personal
+  /// workspace (no `X-Org-Id` header).
+  Future<void> setActiveOrg({required String userId, required String? orgId}) async {
+    if (orgId == null) {
+      state = state.copyWith(clearActiveOrg: true);
+      await _prefs.remove(_PrefKeys.activeOrg);
+      await _prefs.remove(_PrefKeys.activeOrgUser);
+      return;
+    }
+    state = state.copyWith(activeOrgId: orgId, activeOrgUserId: userId);
+    await _prefs.setString(_PrefKeys.activeOrg, orgId);
+    await _prefs.setString(_PrefKeys.activeOrgUser, userId);
   }
 }
 

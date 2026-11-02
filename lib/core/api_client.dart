@@ -23,12 +23,29 @@ export 'api_exception.dart';
 ///   (carrying the envelope's `request_id`), so screens never see `dio` types.
 /// - Opens SSE streams through the same Dio instance ([openEventStream]) so
 ///   the auth interceptor applies to streaming too.
+/// - Adds `X-Org-Id: <active org>` to every request when [activeOrgId]
+///   returns one (absent = the user's personal workspace).
 class ApiClient {
   ApiClient({required this.dio, required this.tokens, required this.refresher});
 
   final Dio dio;
   final TokenStorage tokens;
   final TokenRefresher refresher;
+
+  /// Header that selects the organization a request acts in.
+  static const orgHeader = 'X-Org-Id';
+
+  /// Resolves the active organization for the next request; installed by the
+  /// auth layer once the signed-in user is known (see `currentUserProvider`)
+  /// so one device shared by two accounts never sends the other's org.
+  /// Null / empty = no header = the personal workspace.
+  String? Function()? activeOrgId;
+
+  /// The organization id the next request would carry, if any.
+  String? get currentOrgId {
+    final id = activeOrgId?.call();
+    return id == null || id.isEmpty ? null : id;
+  }
 
   static ApiClient create(TokenStorage tokens, {String baseUrl = Env.apiBaseUrl}) {
     final dio = Dio(
@@ -141,10 +158,14 @@ class ApiClient {
   /// Throws [ApiException] when the server answers with a non-2xx envelope;
   /// transport failures mid-stream arrive as [ApiException] errors on the
   /// stream.
+  /// [headers] are added to the request (e.g. `Idempotency-Key`,
+  /// `Last-Event-ID`); [query] becomes the query string.
   Future<Stream<SseEvent>> openEventStream(
     String path, {
     String method = 'POST',
     Object? data,
+    Map<String, dynamic>? query,
+    Map<String, String>? headers,
     CancelToken? cancelToken,
   }) async {
     await ensureFreshAccessToken();
@@ -154,6 +175,7 @@ class ApiClient {
       res = await dio.request<ResponseBody>(
         path,
         data: data,
+        queryParameters: query,
         cancelToken: token,
         options: Options(
           method: method,
@@ -161,9 +183,10 @@ class ApiClient {
           // Dio applies receiveTimeout *between chunks* on a stream; a slow
           // tool call or a long think must not kill the turn.
           receiveTimeout: streamIdleTimeout,
-          headers: const {
+          headers: {
             'Accept': 'text/event-stream',
             'Cache-Control': 'no-cache',
+            ...?headers,
           },
         ),
       );
@@ -254,6 +277,12 @@ class _AuthInterceptor extends Interceptor {
       if (access != null) {
         options.headers['Authorization'] = 'Bearer $access';
       }
+    }
+    // Resources belong to the active organization; the header is resolved per
+    // request so switching workspaces needs no new client.
+    final orgId = client.currentOrgId;
+    if (orgId != null && options.headers[ApiClient.orgHeader] == null) {
+      options.headers[ApiClient.orgHeader] = orgId;
     }
     handler.next(options);
   }

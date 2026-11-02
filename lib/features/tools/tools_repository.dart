@@ -49,5 +49,7 @@ final toolCatalogProvider = FutureProvider<List<ToolInfo>>((ref) async {
 
 /// The tool picker's default: every tool that runs without asking first.
 /// Approval-required tools are opt-in per chat.
-List<String> defaultToolSelection(List<ToolInfo> tools) =>
-    [for (final t in tools) if (!t.requiresApproval) t.name];
+List<String> defaultToolSelection(List<ToolInfo> tools) => [
+      for (final t in tools)
+        if (!t.requiresApproval) t.name,
+    ];

@@ -7,6 +7,7 @@ import '../core/breakpoints.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../features/assistants/assistant_picker.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
 import '../features/models/models_repository.dart';
@@ -137,10 +138,15 @@ class _HomeLandingState extends ConsumerState<HomeLanding> {
   }
 
   Future<void> _create() async {
+    final choice = await pickAssistantForNewChat(context, ref);
+    if (choice == null || !mounted) return;
     setState(() => _creating = true);
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final s = await repo.createSession(model: ref.read(defaultModelIdProvider));
+      final s = await repo.createSession(
+        model: choice.assistantId == null ? ref.read(defaultModelIdProvider) : null,
+        assistantId: choice.assistantId,
+      );
       ref.invalidate(sessionListProvider);
       if (!mounted) return;
       _redirected = true;

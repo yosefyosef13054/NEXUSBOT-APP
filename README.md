@@ -39,6 +39,13 @@ NexusBot's Flutter app is a thin, well-architected client over the NexusBot REST
 - 🛡 **Human-in-the-loop approvals** — tools that need permission pause the turn with an approval card (tool, description, input); **Approve** / **Deny** resumes the stream into the same bubble, on SSE or WebSocket, and survives an app restart.
 - 🗂 **Collections & URL ingestion** — group documents into knowledge bases, move documents between them, filter the library, and add web pages by URL.
 - 🔎 **Full-text message search** — the sidebar searches message contents server-side and renders the server's `<mark>` highlights.
+- 🏢 **Organizations** — every user has a personal workspace and can create shared ones; the sidebar switches the **active org** (`X-Org-Id` on every request, `org_id` in the WebSocket auth frame). Owners / admins rename the workspace, set monthly budgets, restrict models and manage members by email.
+- 📊 **Usage & quotas** — tokens, cost and messages for you and your workspace with budget progress bars; a spent budget (`429 quota_exceeded`) shows a persistent banner and pauses the composer until it resets. Admins get per-member / model / day reports; server admins a cross-org report and the feedback inbox.
+- 🧑‍💼 **Assistants** — personas with their own avatar, system prompt, model, tools, knowledge scope, temperature and memory setting. **New chat** picks one (default preselected); the chat header swaps it.
+- 👍 **Feedback** — thumbs up / down on every reply (with an optional comment on thumbs-down), persisted and reflected on reload.
+- 🧠 **Memory** — NexusBot remembers facts, preferences and standing instructions across chats; a **Memory** screen lists, edits and forgets them, and replies that used memories say so.
+- 🌿 **Branching** — edit a user message in place (the reply streams into a new branch) or regenerate; a "‹ 2/3 ›" switcher walks the siblings.
+- 🔁 **Resumable & background turns** — a dropped stream reconnects once from the last frame; a chat that opens mid-reply attaches to the running generation; "Send in background" lets the server finish even if the app goes away. Every send carries an `Idempotency-Key`.
 - 🔐 **JWT auth** — register / login, tokens stored in the platform secure store, with **transparent, single-flight access-token refresh** on `401` (and proactively before a stream opens). Rotating refresh tokens, server-side sign-out, change password, edit display name and delete account.
 - 📄 **Document upload** — pick a file, upload, and watch ingest status update.
 - 🎨 **Adaptive, branded UI** — a navigation **drawer on mobile** and a **persistent sidebar on tablet/desktop**, dark/light themes, crimson brand, Markdown + syntax-highlighted code blocks.
@@ -56,7 +63,8 @@ The app follows a clean **feature-first** structure with a small shared core. St
 │  Controllers / Providers (Riverpod StateNotifier)          │  UI state
 ├──────────────────────────────────────────────────────────┤
 │  Repositories (auth · chat · documents · collections ·     │  API calls
-│                models · tools)                             │
+│                models · tools · orgs · usage · assistants · │
+│                memory · admin)                             │
 ├──────────────────────────────────────────────────────────┤
 │  Core: ApiClient (Dio+JWT) · SSE/WS · SecureStorage · Env  │  Plumbing
 └──────────────────────────────────────────────────────────┘
@@ -70,12 +78,12 @@ The app follows a clean **feature-first** structure with a small shared core. St
 | Concern | Where | Notes |
 |---|---|---|
 | **State management** | `flutter_riverpod` | `StateNotifier` for live chat state; `FutureProvider` for repositories / session lists. |
-| **Navigation** | `go_router` (`core/router.dart`) | Real URLs. A `ShellRoute` keeps the sidebar mounted while `/`, `/chat/:sessionId`, `/documents` and `/settings` swap underneath it; a redirect bounces unauthenticated users to **/login** and authenticated users away from auth screens. A browser refresh on `/chat/<id>` reopens that chat. |
-| **HTTP** | `dio` (`core/api_client.dart`) | One client injects `Authorization: Bearer <jwt>` on every request and maps every non-2xx envelope to a typed `ApiException` (with the server's `request_id`). An interceptor catches `401`, refreshes through the **single-flight** `TokenRefresher` (`core/auth_session.dart`) — concurrent 401s await the same refresh — retries once, and only fails if the refresh itself fails. |
+| **Navigation** | `go_router` (`core/router.dart`) | Real URLs. A `ShellRoute` keeps the sidebar mounted while `/`, `/chat/:sessionId`, `/documents`, `/collections`, `/assistants`, `/memory`, `/orgs/:id`, `/admin/*` and `/settings` swap underneath it; a redirect bounces unauthenticated users to **/login** and authenticated users away from auth screens. A browser refresh on `/chat/<id>` reopens that chat. |
+| **HTTP** | `dio` (`core/api_client.dart`) | One client injects `Authorization: Bearer <jwt>` and — while a workspace other than the personal one is active — `X-Org-Id` on every request, and maps every non-2xx envelope to a typed `ApiException` (with the server's `request_id`). An interceptor catches `401`, refreshes through the **single-flight** `TokenRefresher` (`core/auth_session.dart`) — concurrent 401s await the same refresh — retries once, and only fails if the refresh itself fails. |
 | **Streaming** | `dio` (SSE) + `web_socket_channel` | `ChatRepository.streamMessage` opens a `ChatTurn` on the chosen transport; both emit the same `StreamEvent` types so the controller doesn't care which is active. SSE goes through the same Dio client (`ApiClient.openEventStream` + a tiny `core/sse_parser.dart`), so auth refresh applies to streams too. |
 | **Secrets** | `flutter_secure_storage` | Access + refresh tokens live in Keychain / Keystore, never in plain prefs. |
-| **Preferences** | `shared_preferences` (`core/preferences.dart`) | Theme mode, transport (SSE/WS), preferred model, streaming on/off, RAG-by-default, tools-by-default, plus per-chat tool selections (`SessionPrefs`, keyed by session id). |
-| **Catalogs** | `features/models`, `features/tools`, `features/collections` | `GET /models`, `GET /tools` and `GET /collections` are loaded once per app session into plain `FutureProvider`s (pull-to-refresh invalidates them); the chat screen, Settings and Documents all read the same cache. |
+| **Preferences** | `shared_preferences` (`core/preferences.dart`) | Theme mode, transport (SSE/WS), preferred model, streaming on/off, RAG-by-default, tools-by-default, the active organization (stored with the user who chose it), plus per-chat tool selections (`SessionPrefs`, keyed by session id). |
+| **Catalogs** | `features/models`, `features/tools`, `features/collections`, `features/assistants`, `features/orgs` | `GET /models`, `GET /tools`, `GET /collections`, `GET /assistants` and `GET /orgs` are loaded once per app session into plain `FutureProvider`s (pull-to-refresh invalidates them); the chat screen, Settings and Documents all read the same cache. Org-scoped providers watch the active org id and reload on a switch. |
 | **Theming** | `core/theme.dart` + `google_fonts` | Crimson brand tokens, dark/light, spacing / radius scales. |
 | **Adaptive layout** | `core/breakpoints.dart` + `shared/home_shell.dart` | `< 720` → drawer; `≥ 720` → persistent sidebar; `≥ 1100` → desktop spacing. |
 
@@ -89,7 +97,12 @@ The app follows a clean **feature-first** structure with a small shared core. St
 | `/chat/:sessionId` | Chat | Deep-linkable; the sidebar highlights the open session. Header shows the session model with a switch menu. |
 | `/documents` | Documents | Upload (with an optional collection), add from URL, collection filter, move to collection, ingest status. |
 | `/collections` | Collections | Create, rename, delete (optionally with the documents) knowledge bases. |
-| `/settings` | Settings | Appearance, chat defaults, model (from the server), account. |
+| `/assistants`, `/assistants/new`, `/assistants/:id` | Assistants | The workspace's personas: list, create / edit form, delete. |
+| `/memory` | Memory | "What NexusBot remembers": list by kind, add, edit, forget, clear all. |
+| `/orgs/:id` | Workspace | Name, budgets, allowed models, members (read-only for plain members). |
+| `/orgs/:id/usage` | Usage report | Owner / admin: date range, group by user / model / day, bar list. |
+| `/admin/usage`, `/admin/feedback` | Administration | Server admins only (`UserRead.role == "admin"`): cross-org usage, feedback inbox. |
+| `/settings` | Settings | Workspace, usage, appearance, chat defaults (incl. memory), model (from the server), administration, account. |
 
 Everything below the auth screens lives inside one `ShellRoute` (`shared/home_shell.dart`), so the drawer (mobile) / persistent sidebar (tablet, desktop) never remounts between pages. Sidebar taps and **New chat** simply `context.go(...)`.
 
@@ -123,6 +136,50 @@ Citations are structured (`document_id`, `document_name`, `chunk_id`, `chunk_ind
 - Documents: a collection filter row (`GET /documents?collection_id=`), **Move to collection…** in the tile menu (`PATCH /documents/{id} {collection_id}`, `null` unassigns), an optional collection choice when uploading, and **Add from URL** (`POST /documents/from-url` with an optional collection; `422` messages for unreachable / unsupported / private URLs are shown inline).
 - Chat: the composer's **Knowledge** chip picks the collections this chat searches. The choice is saved as the session default (`PATCH /sessions/{id} {"meta": {"collection_ids": [...]}}`, merged with the existing meta) and sent as `collection_ids` on every turn; *All documents* sends `null`.
 
+### Organizations & the active workspace
+
+- Every user owns a **personal** org (created at registration); `POST /orgs` creates a shared one with the creator as owner. `features/orgs`: `OrgsRepository` (list / create / get / patch, members list / add / patch / remove) and the `/orgs/:id` screen.
+- The **active org** is chosen in the sidebar header (`OrgSwitcher`) and stored in prefs together with the user id that chose it, so another account on the same device never inherits it. `currentUserProvider` installs it on the `ApiClient`: every request then carries `X-Org-Id` (absent = personal), and the WebSocket `auth` frame carries `org_id`. A stale choice (the user was removed, the org deleted) makes the server answer `403 forbidden`; `orgListProvider` resets the choice to the personal workspace and reloads.
+- Switching invalidates the sessions, documents, collections, assistants, memories and usage providers (they all watch `activeOrgIdProvider`) and navigates to `/`.
+- `/orgs/:id` for owners / admins: rename, monthly budgets (`settings.budget_usd_per_month`, `budget_tokens_per_month`; empty = no limit), allowed models (multi-select from the catalog, "all" = `null`), members with role chips, invite by email (`404` → "no NexusBot account uses that email", `409` → "already a member"), change role, remove; the owner can never be removed and a member may leave. Plain members see a read-only member list. Org ids are never shown — only names.
+
+### Usage & quotas
+
+- `GET /usage/me` feeds Settings → **USAGE** (your and the workspace's tokens / cost / messages for the period, a progress bar per budget) and the compact **meter** in the sidebar footer; it is re-fetched after every completed turn.
+- When the workspace budget is spent, every generation request answers `429` with code `quota_exceeded` (`details`: the budget, what was used and `resets_at`) — over a stream it arrives as an `error` frame with the same code. The chat controller puts a `QuotaExceeded` into the app-wide `quotaStateProvider`: the chat shows a persistent banner with the figures and the reset time, the composer is disabled, and **Refresh** re-checks `/usage/me` (the banner clears once the budget allows turns again or the reset moment has passed).
+- Owners / admins get `/orgs/:id/usage` (`GET /orgs/{id}/usage?from&to&group_by=user|model|day`): this month / last 30 days / custom range, group by, totals and a simple bar list (cost / tokens / messages — no chart library). Server admins additionally get `/admin/usage` (`group_by=org` too) and `/admin/feedback` (paged list of thumbs with comments and a link to the chat), linked from Settings only when `role == "admin"`.
+
+### Assistants
+
+- `features/assistants`: `AssistantsRepository` (`GET /assistants` paged, `POST`, `GET/PATCH/DELETE /assistants/{id}`), `assistantListProvider` (org-wide) and `defaultAssistantProvider`.
+- `/assistants` lists avatar, name, model and a **DEFAULT** badge; the form (`/assistants/new`, `/assistants/:id`) edits name, description, avatar emoji, system prompt, model (from the catalog), RAG / tools toggles with a tools multi-select (`GET /tools`) and a collections multi-select, a custom-temperature slider, memory and default flags. Only the creator or an org admin may edit or delete — the form is read-only otherwise and a `403` surfaces the same message. `is_default: true` clears the previous default server-side.
+- **New chat** (sidebar and landing page) opens a small sheet when the workspace has assistants — *Plain chat* plus every assistant, the default preselected — and sends `assistant_id` on `POST /sessions`. The chat header shows the assistant's avatar / name with a menu that calls `PATCH /sessions/{id} {assistant_id}` (null = plain chat). A session with an assistant uses its prompt, model, tools, collections and memory setting as defaults; per-turn fields still override.
+
+### Feedback
+
+Thumbs up / down live in the actions row of every finished reply (`FeedbackButtons`). A thumbs-down first opens an optional comment sheet; `POST /sessions/{id}/messages/{mid}/feedback {rating, comment}` upserts, tapping the active rating again `DELETE`s it. History rows reflect `meta.feedback`, and the message is updated optimistically (reverted on failure).
+
+### Memory
+
+- `features/memory`: `MemoryRepository` (`GET /memories` paged, `POST`, `PATCH/DELETE /memories/{id}`, `DELETE /memories`) and the `/memory` screen — "What NexusBot remembers", grouped into facts / preferences / instructions with importance dots and the last-used date; add, edit, forget, and a confirmed **Forget all**.
+- Settings → CHAT has the account-wide **Memory** switch (`PATCH /auth/me {memory_enabled}`); memories are only extracted and injected when the server, the user and the assistant allow it. The memory screen shows a hint when it is off.
+- A reply whose `meta.memories_used` is non-empty gets a subtle "Used N memories" caption; tapping it opens the memory screen.
+
+### Branching (message tree)
+
+- Messages carry `parent_id` and `siblings: {index, count}` (user messages: edits; replies: regenerations), sessions `active_leaf_id`. `GET /sessions/{id}/messages` returns the active branch only, so the list stays linear.
+- Under any message with `siblings.count > 1` a **‹ i/n ›** switcher appears (`index` is zero-based, shown one-based). An arrow calls `GET …/{message_id}/siblings`, picks the neighbour of `active_index` (wrapping), then `POST /sessions/{id}/branch {leaf_message_id}` — the server makes that sibling's latest descendant the leaf — and the returned history replaces the message list.
+- **Edit** in a user message's actions opens an inline editor; *Save & send* calls `POST …/{message_id}/edit` streamed exactly like `/messages/stream` (SSE): the optimistic user bubble is replaced by the persisted `user_message` (which carries `parent_id`), the reply streams into a new bubble and everything after the edited message disappears because the branch changed. Stop and approvals work on edited turns like on any other.
+- **Regenerate** keeps the blocking endpoint; the previous reply stays as a sibling, so the active branch is reloaded from the server afterwards to pick up the counts.
+
+### Resumable streams, background turns, idempotency
+
+- Every streamed turn has a `generation_id` (`user_message.data.generation_id`, also on `done` / `assistant_message`) and every SSE frame an `id: <seq>` line; `core/sse_parser.dart` exposes it and `ChatTurn` tracks `generationId` and `lastEventId` as frames arrive.
+- On a transport error mid-stream (not a user stop) — or a stream that ends without a terminal event — the controller reconnects **once** through `GET /sessions/{id}/generations/{generation_id}/events?after=<last seq>` (also sent as `Last-Event-ID`) and keeps streaming into the same bubble; a WebSocket turn has no cursor, so the replay starts from the first frame and the buffer is reset first. If the reconnect fails (e.g. `404`, the generation expired), the usual error path applies.
+- When a chat opens, `GET /sessions/{id}/generations/active` is called; a `running` generation is attached to via the same replay into a streaming bubble for its user message (a replayed `user_message` that is already in the history is not duplicated). Stop on an attached stream only detaches — the server finishes the reply.
+- **Send in background** (composer overflow menu) uses `POST /sessions/{id}/messages/background` (202 with `generation_id` and the persisted `user_message`), then attaches; the reply is produced even if the app disconnects.
+- Every send attempt — `/messages`, `/messages/stream`, `/messages/background` and `/messages/{id}/edit` — carries a fresh UUID `Idempotency-Key`; Dio's transparent 401 retry resends the same request, so a retry within 24 h replays the original turn instead of creating a duplicate.
+
 ### Search
 
 The sidebar search filters chat titles locally and, after a 350 ms debounce, calls `POST /search` for message contents. Hits are listed under **MESSAGES** with the server's `highlight` snippet — `<mark>` runs are rendered bold by `shared/highlight_text.dart` — and tapping one opens the session.
@@ -139,7 +196,8 @@ The sidebar search filters chat titles locally and, after a 350 ms debounce, cal
 Both SSE and WebSocket deliver the same discriminated events (parsed by the sealed `StreamEvent` in `features/chat/chat_models.dart`):
 
 ```jsonc
-{ "type": "user_message",      "data": { "id": "…", "content": "…" } }
+{ "type": "user_message",      "data": { "id": "…", "content": "…", "generation_id": "…", "parent_id": null,
+                                         "siblings": { "index": 0, "count": 1 } } }
 { "type": "citations",         "data": [ { "document_id": "…", "document_name": "spec.pdf", "chunk_id": "…",
                                            "chunk_index": 3, "page": 4, "section": "2. Scope > 2.1 Goals",
                                            "start_index": 1200, "end_index": 1980, "collection_id": null,
@@ -153,18 +211,19 @@ Both SSE and WebSocket deliver the same discriminated events (parsed by the seal
                                          "tool": "web_search", "input": {…}, "description": "…" } ] } }
 { "type": "usage",             "data": { "prompt_tokens": 1240, "completion_tokens": 312, "total_tokens": 1552 } }
 { "type": "done",              "data": { "text": "Hello!", "latency_ms": 820, "interrupted": false,
-                                         "status": "ok", "model": "gpt-4o-mini" } }
+                                         "status": "ok", "model": "gpt-4o-mini", "generation_id": "…" } }
 { "type": "assistant_message", "data": { "id": "…", "content": "Hello!", "citations": […], "tool_calls": […],
                                          "interrupted": false, "status": "ok", "model": "gpt-4o-mini",
-                                         "approval": null } }
-{ "type": "error",             "data": { "code": "busy", "message": "…" } }
+                                         "approval": null, "generation_id": "…", "parent_id": "…",
+                                         "meta": { "memories_used": ["…"], "feedback": null } } }
+{ "type": "error",             "data": { "code": "busy", "message": "…", "details": {} } }
 ```
 
 The chat controller appends `token` events to a live buffer, swaps in `citations` / `tool_call` events as they arrive (upserting on `call_id`), attaches an `approval_required` card, and replaces the bubble with the canonical `assistant_message` when the stream completes — matching on the persisted message id so an approval continuation lands in the bubble it paused in. Session titles are generated server-side *after* the stream closes, so the sidebar re-fetches the session list ~2 s after each turn (and on app resume).
 
-**SSE** is a plain `POST …/messages/stream` with `Accept: text/event-stream`, read through Dio as a byte stream and split into `data: <json>` frames by `core/sse_parser.dart`. Cancelling the subscription closes the HTTP connection, which is how **Stop** works on SSE: the server notices the disconnect, persists the partial reply (`meta.status == "interrupted"`), and the app keeps the text it already has.
+**SSE** is a plain `POST …/messages/stream` with `Accept: text/event-stream`, read through Dio as a byte stream and split into `id: <seq>` / `data: <json>` frames by `core/sse_parser.dart` (the `id` is the cursor for the generation event replay). Cancelling the subscription closes the HTTP connection, but a disconnect alone no longer stops the server-side turn (it keeps running and stays resumable), so **Stop** on SSE first calls `POST …/generations/{generation_id}/stop`: the server persists the partial reply (`meta.status == "interrupted"`) and the app keeps the text it already has.
 
-**WebSocket** connects to `/ws/sessions/{id}` without a token in the URL, sends `{"type":"auth","token":"<jwt>"}` as the first frame and waits for `auth_ok` before sending `user_message` (which carries `model` and `collection_ids` only when set). **Stop** sends `{"type":"stop"}` and keeps listening: the server still emits `done` and `assistant_message`, both with `interrupted: true`. An approval is answered with `{"type":"approval","approval_id":"…","decision":"approve"|"deny"}` on a fresh socket and the continuation arrives there. A second `user_message` while one is in flight yields a `busy` error; `ping`/`pong` keep the socket alive.
+**WebSocket** connects to `/ws/sessions/{id}` without a token in the URL, sends `{"type":"auth","token":"<jwt>","org_id":"<active org>"}` as the first frame (`org_id` only for a non-personal workspace) and waits for `auth_ok` before sending `user_message` (which carries `model` and `collection_ids` only when set). **Stop** sends `{"type":"stop"}` and keeps listening: the server still emits `done` and `assistant_message`, both with `interrupted: true`. An approval is answered with `{"type":"approval","approval_id":"…","decision":"approve"|"deny"}` on a fresh socket and the continuation arrives there. A second `user_message` while one is in flight yields a `busy` error; `ping`/`pong` keep the socket alive.
 
 > **Web note:** Dio's browser adapter delivers an SSE body only once the response completes, so on Flutter **web** pick the **WebSocket** transport for live token streaming.
 
@@ -228,6 +287,7 @@ flutter run \
 3. Toggle **RAG** to ground answers in uploaded documents, or **Tools** to let the agent take actions — the tune icon on the Tools chip picks which tools it may use.
 4. Upload a document (or **Add from URL**) from the **Documents** screen, put it in a **Collection**, and scope the chat to it with the **Knowledge** chip.
 5. When the agent asks to run a tool that needs permission, answer the approval card; the reply continues in place. Tap a citation to read the exact chunk it came from.
+6. Create an **organization** from the sidebar header, invite a colleague by email and set a monthly budget; create an **assistant** and start a chat with it. Edit one of your messages to branch the conversation, rate a reply, and check **Memory** for what NexusBot picked up.
 
 ---
 
@@ -244,6 +304,8 @@ flutter run \
 | Tools by default | Settings screen (and per-chat composer toggle) | On |
 | Tools per chat | Composer → Tools chip → tune icon (stored per session on the device) | Every tool that needs no approval |
 | Knowledge per chat | Composer → Knowledge chip (stored as `session.meta.collection_ids`) | All documents |
+| Active workspace | Sidebar header (stored per user on the device; sent as `X-Org-Id`) | Personal |
+| Memory | Settings screen (`PATCH /auth/me {memory_enabled}`) | On |
 
 The app has **no embedded secrets** — authentication is entirely token-based against the backend.
 
@@ -270,17 +332,23 @@ lib/
 │  ├─ breakpoints.dart       # Adaptive layout breakpoints
 │  └─ widgets.dart           # Shared UI primitives
 ├─ features/
-│  ├─ auth/                  # login · register · splash · repository (incl. default_model) · providers
-│  ├─ chat/                  # chat screen · controller · repository (ChatTurn, approvals, search) · models · WS
-│  │                         # · approval card · tool chips · citation sheet · tool/knowledge/model pickers
+│  ├─ admin/                 # server-admin feedback inbox (+ repository)
+│  ├─ assistants/            # personas: model · repository · list · editor form · new-chat picker / header menu
+│  ├─ auth/                  # login · register · splash · repository (default_model, memory_enabled) · providers
+│  ├─ chat/                  # chat screen · controller (resume, attach, edit, branch, quota) · repository
+│  │                         # (ChatTurn + generation tracking, approvals, siblings/branch, feedback, background)
+│  │                         # · models · WS · approval card · tool chips · citation sheet · sheets · message extras
 │  ├─ collections/           # knowledge bases: model · repository · /collections screen
 │  ├─ documents/             # upload (de-dup aware, collection) · add from URL · filter · move · chunks
+│  ├─ memory/                # long-term memory: model · repository · /memory screen
 │  ├─ models/                # GET /models catalog + default-model resolution
+│  ├─ orgs/                  # organizations: model · repository + active-org providers · switcher · settings screen
 │  ├─ tools/                 # GET /tools catalog + default tool selection
-│  └─ settings/              # theme · transport · model (server list) · streaming · RAG/tools defaults · account
+│  ├─ usage/                 # usage model · repository + quota state · widgets (bars, meter, banner) · report screen
+│  └─ settings/              # workspace · usage · theme · transport · model · chat defaults · memory · admin · account
 └─ shared/
    ├─ home_shell.dart        # ShellRoute host: drawer (mobile) / sidebar (wide) + landing route
-   ├─ sidebar.dart           # Session list, title + message search, new chat, links, profile
+   ├─ sidebar.dart           # Workspace switcher, session list, search, new chat (assistant picker), links, usage, profile
    └─ highlight_text.dart    # `<mark>` highlight parser + widget
 ```
 
@@ -298,7 +366,7 @@ dart run flutter_launcher_icons
 
 ## ✅ Continuous integration
 
-`.github/workflows/ci.yml` runs `flutter pub get`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser, the stream-event parser (including `approval_required`, structured citations and `role: "tool"` rows), the chat reducer via a fake repository (approval flow, per-turn model / tool / collection overrides), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame) and end-to-end checks of the API client and the models / tools / collections / documents / approvals / search repositories against loopback HTTP servers.
+`.github/workflows/ci.yml` runs `flutter pub get`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser (incl. `id:` lines), the stream-event parser (including `approval_required`, structured citations, `role: "tool"` rows, `generation_id`, `parent_id` / `siblings`, `memories_used`, `feedback` and `quota_exceeded` frames), the chat reducer via a fake repository (approval flow, per-turn overrides, sibling switching, the edit flow, resume-after-drop, attaching to a running generation, background sends, the quota banner state, feedback), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame and `org_id`), widget smoke tests (approval card, tool chips, citations, sibling switcher, feedback buttons, inline editor, quota banner) and end-to-end checks of the API client and every repository — models, tools, collections, documents, approvals, search, orgs + members (with the `X-Org-Id` header), usage and the `quota_exceeded` 429, assistants, feedback, memories, siblings / branch, generation event replay with `after=`, background sends and the `Idempotency-Key` header — against loopback HTTP servers.
 
 ---
 

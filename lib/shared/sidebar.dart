@@ -8,22 +8,28 @@ import '../core/api_exception.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import '../features/assistants/assistant_picker.dart';
 import '../features/auth/auth_providers.dart';
 import '../features/auth/auth_repository.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
 import '../features/models/models_repository.dart';
+import '../features/orgs/org_switcher.dart';
+import '../features/usage/usage_repository.dart';
+import '../features/usage/usage_widgets.dart';
 import 'highlight_text.dart';
 
 /// Persistent left sidebar shown on tablet/desktop (and inside the drawer on
 /// mobile). Contains:
-/// - Brand
-/// - "New chat" button
+/// - Brand + the workspace switcher (active organization)
+/// - "New chat" button (opens the assistant picker when the workspace has
+///   assistants)
 /// - Search field: filters chat titles locally and, debounced, runs
 ///   `POST /search` across message contents (results show the server's
 ///   `<mark>` highlights)
 /// - Session list (with rename/delete actions)
-/// - Documents / Collections / Settings links
+/// - Documents / Collections / Assistants / Memory / Settings links
+/// - Usage meter for the month
 /// - User profile dropdown (settings + sign out)
 ///
 /// Navigation goes through the router (`context.go`), so the selected session
@@ -131,12 +137,18 @@ class _SidebarState extends ConsumerState<Sidebar> {
   }
 
   Future<void> _newChat() async {
+    // Plain chat, or one of the workspace's assistants (default preselected).
+    final choice = await pickAssistantForNewChat(context, ref);
+    if (choice == null || !mounted) return;
     setState(() => _creating = true);
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
       // Only a model the server lists is sent; null lets the server resolve
-      // the user's / its own default.
-      final s = await repo.createSession(model: ref.read(defaultModelIdProvider));
+      // the user's / its own default — or the assistant's model.
+      final s = await repo.createSession(
+        model: choice.assistantId == null ? ref.read(defaultModelIdProvider) : null,
+        assistantId: choice.assistantId,
+      );
       ref.invalidate(sessionListProvider);
       if (!mounted) return;
       _go(AppRoutes.chat(s.id));
@@ -204,6 +216,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
     final t = context.tokens;
     final user = ref.watch(currentUserProvider);
     final sessions = ref.watch(sessionListProvider);
+    final usage = ref.watch(usageMeProvider).valueOrNull;
 
     return Container(
       width: widget.width,
@@ -216,7 +229,12 @@ class _SidebarState extends ConsumerState<Sidebar> {
           children: [
             // ── Header ───────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.all(NexusSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                NexusSpacing.lg,
+                NexusSpacing.lg,
+                NexusSpacing.lg,
+                NexusSpacing.sm,
+              ),
               child: Row(
                 children: [
                   const NexusLogo(size: 30),
@@ -229,6 +247,17 @@ class _SidebarState extends ConsumerState<Sidebar> {
                     ),
                 ],
               ),
+            ),
+
+            // ── Workspace switcher ───────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NexusSpacing.lg,
+                0,
+                NexusSpacing.lg,
+                NexusSpacing.md,
+              ),
+              child: OrgSwitcher(onNavigated: widget.onNavigated),
             ),
 
             // ── New chat button ──────────────────────────────────────
@@ -360,11 +389,27 @@ class _SidebarState extends ConsumerState<Sidebar> {
               onTap: () => _go(AppRoutes.collections),
             ),
             _SidebarLink(
+              icon: Icons.smart_toy_outlined,
+              label: 'Assistants',
+              active: widget.location.startsWith(AppRoutes.assistants),
+              onTap: () => _go(AppRoutes.assistants),
+            ),
+            _SidebarLink(
+              icon: Icons.psychology_outlined,
+              label: 'Memory',
+              active: widget.location.startsWith(AppRoutes.memory),
+              onTap: () => _go(AppRoutes.memory),
+            ),
+            _SidebarLink(
               icon: Icons.settings_rounded,
               label: 'Settings',
               active: widget.location.startsWith(AppRoutes.settings),
               onTap: () => _go(AppRoutes.settings),
             ),
+
+            // ── Usage meter ──────────────────────────────────────────
+            Divider(color: t.borderSubtle, height: 1),
+            UsageMeter(summary: usage, onTap: () => _go(AppRoutes.settings)),
 
             // ── Profile dropdown ─────────────────────────────────────
             user.when(
@@ -418,7 +463,9 @@ class _SidebarState extends ConsumerState<Sidebar> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                u.fullName?.isNotEmpty == true ? u.fullName! : u.email.split('@').first,
+                                u.fullName?.isNotEmpty == true
+                                    ? u.fullName!
+                                    : u.email.split('@').first,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -547,8 +594,7 @@ class _SearchResults extends StatelessWidget {
             ),
           )
         else if (hits != null)
-          for (final r in hits)
-            _SearchResultTile(result: r, onTap: () => onOpenChat(r.sessionId)),
+          for (final r in hits) _SearchResultTile(result: r, onTap: () => onOpenChat(r.sessionId)),
       ],
     );
   }

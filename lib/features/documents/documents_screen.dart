@@ -479,8 +479,7 @@ class _DocumentTile extends StatelessWidget {
               if (v == 'delete') onDelete();
             },
             itemBuilder: (_) => [
-              if (canMove)
-                const PopupMenuItem(value: 'move', child: Text('Move to collection…')),
+              if (canMove) const PopupMenuItem(value: 'move', child: Text('Move to collection…')),
               const PopupMenuItem(value: 'delete', child: Text('Delete')),
             ],
           ),

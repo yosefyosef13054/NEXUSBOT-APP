@@ -65,6 +65,17 @@ class AuthRepository {
     return User.fromJson(res.data!);
   }
 
+  /// `PATCH /auth/me {memory_enabled}` — whether long-term memories are
+  /// extracted after turns and injected into later ones.
+  Future<User> setMemoryEnabled(bool enabled) async {
+    final res = await _client.request<Map<String, dynamic>>(
+      '/auth/me',
+      method: 'PATCH',
+      data: {'memory_enabled': enabled},
+    );
+    return User.fromJson(res.data!);
+  }
+
   /// `POST /auth/change-password`. Every other refresh token is revoked
   /// server-side; the returned pair keeps this device signed in.
   Future<void> changePassword({

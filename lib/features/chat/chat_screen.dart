@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/breakpoints.dart';
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../../shared/home_shell.dart';
+import '../assistants/assistant_model.dart';
+import '../assistants/assistant_picker.dart';
+import '../assistants/assistants_repository.dart';
 import '../collections/collection_model.dart';
 import '../collections/collections_repository.dart';
 import '../models/model_info.dart';
 import '../models/models_repository.dart';
 import '../tools/tools_repository.dart';
+import '../usage/usage_repository.dart';
+import '../usage/usage_widgets.dart';
 import 'chat_controller.dart';
 import 'chat_models.dart';
 import 'chat_repository.dart';
@@ -28,6 +35,10 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollCtrl = ScrollController();
+
+  /// The user message currently open in the inline editor.
+  String? _editingId;
+  bool _quotaRefreshing = false;
 
   @override
   void dispose() {
@@ -63,6 +74,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     if (result == null || !mounted) return;
     await _controller.setCollectionIds(result.ids);
+  }
+
+  /// Thumbs up / down: tapping the active rating clears it; a thumbs-down
+  /// first asks for an optional comment.
+  Future<void> _rate(ChatMessage m, int rating) async {
+    if (m.feedback?.rating == rating) {
+      await _controller.clearFeedback(m.id);
+      return;
+    }
+    if (rating < 0) {
+      final result = await showFeedbackCommentSheet(context);
+      if (result == null || !mounted) return;
+      await _controller.setFeedback(m.id, rating, comment: result.comment);
+      return;
+    }
+    await _controller.setFeedback(m.id, rating);
+  }
+
+  Future<void> _refreshQuota() async {
+    setState(() => _quotaRefreshing = true);
+    try {
+      await _controller.refreshQuota();
+    } catch (_) {
+      // The banner stays; the error is not worth a second banner.
+    } finally {
+      if (mounted) setState(() => _quotaRefreshing = false);
+    }
   }
 
   /// `call_id`s of the tool rows directly above message [i] — those runs are
@@ -104,23 +142,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final defaultModelId = ref.watch(defaultModelIdProvider);
     final tools = ref.watch(toolCatalogProvider).valueOrNull;
     final collections = ref.watch(collectionListProvider).valueOrNull;
+    final assistants = ref.watch(assistantListProvider).valueOrNull ?? const <Assistant>[];
+    final assistant = session?.assistantId == null
+        ? null
+        : assistants.where((a) => a.id == session!.assistantId).firstOrNull;
+    final quota = ref.watch(quotaStateProvider);
 
     ref.listen(chatControllerProvider(widget.sessionId), (_, __) => _scrollToBottom());
 
-    final lastAssistantId = state.messages.lastWhere(
-      (m) => m.role == MessageRole.assistant,
-      orElse: () => ChatMessage(
-        id: '',
-        sessionId: '',
-        role: MessageRole.assistant,
-        content: '',
-        createdAt: DateTime.now(),
-      ),
-    ).id;
+    final lastAssistantId = state.messages
+        .lastWhere(
+          (m) => m.role == MessageRole.assistant,
+          orElse: () => ChatMessage(
+            id: '',
+            sessionId: '',
+            role: MessageRole.assistant,
+            content: '',
+            createdAt: DateTime.now(),
+          ),
+        )
+        .id;
 
-    final sessionModelId = session?.model ?? defaultModelId;
+    final sessionModelId = session?.model ?? assistant?.model ?? defaultModelId;
     final sessionModelLabel = catalog.labelFor(sessionModelId);
     final effectiveTools = controller.effectiveToolNames;
+    final busy = state.sending || state.switchingBranch;
 
     return Scaffold(
       backgroundColor: t.background,
@@ -145,6 +191,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ],
         ),
         actions: [
+          if (assistants.isNotEmpty || session?.assistantId != null)
+            Padding(
+              padding: const EdgeInsets.only(right: NexusSpacing.xs),
+              child: AssistantMenuButton(
+                assistants: assistants,
+                currentId: session?.assistantId,
+                enabled: !busy,
+                onSelected: (id) {
+                  if (id != session?.assistantId) controller.setAssistant(id);
+                },
+                child:
+                    _HeaderAssistantChip(assistant: assistant, hasId: session?.assistantId != null),
+              ),
+            ),
           if (catalog.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: NexusSpacing.xs),
@@ -152,7 +212,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 catalog: catalog,
                 currentId: sessionModelId,
                 tooltip: 'Session model',
-                enabled: !state.sending,
+                enabled: !busy,
                 onSelected: (id) {
                   if (id != null && id != session?.model) controller.setSessionModel(id);
                 },
@@ -162,7 +222,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded, size: 20),
-            onPressed: state.sending ? null : controller.reload,
+            onPressed: busy ? null : controller.reload,
           ),
         ],
       ),
@@ -170,7 +230,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         children: [
           Expanded(
             child: state.messages.isEmpty && !state.sending
-                ? const _EmptyChat()
+                ? _EmptyChat(assistant: assistant)
                 : Align(
                     alignment: Alignment.topCenter,
                     child: ConstrainedBox(
@@ -197,20 +257,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             );
                           }
                           final isAssistant = m.role == MessageRole.assistant;
+                          final isUser = m.role == MessageRole.user;
                           final isLastAssistant = isAssistant && m.id == lastAssistantId;
                           final approvalId = m.approval?.approvalId;
                           return MessageBubble(
                             key: ValueKey(m.id),
                             message: m,
                             isLastAssistant: isLastAssistant && !state.sending,
-                            onRegenerate: state.sending ? null : controller.regenerate,
+                            onRegenerate: busy ? null : controller.regenerate,
                             hiddenToolCallIds:
                                 isAssistant ? _toolRowIdsBefore(state.messages, i) : const {},
-                            onApprovalDecision: approvalId == null || state.sending
+                            onApprovalDecision: approvalId == null || busy
                                 ? null
                                 : (d) => controller.resolveApproval(approvalId, d),
                             approvalBusy: state.sending,
                             onCitationTap: (c) => showCitationSheet(context, c),
+                            onEdit: isUser && !busy && quota == null
+                                ? () => setState(() => _editingId = m.id)
+                                : null,
+                            editing: _editingId == m.id,
+                            onSubmitEdit: (text) {
+                              setState(() => _editingId = null);
+                              controller.editMessage(m.id, text);
+                            },
+                            onCancelEdit: () => setState(() => _editingId = null),
+                            onSwitchSibling:
+                                busy ? null : (delta) => controller.switchSibling(m.id, delta),
+                            switchingBranch: state.switchingBranch,
+                            onFeedback: isAssistant && !busy ? (r) => _rate(m, r) : null,
+                            onMemoriesTap: () => context.go(AppRoutes.memory),
                           );
                         },
                       ),
@@ -238,13 +313,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ],
               ),
             ),
+          if (quota != null)
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 920),
+                child: QuotaBanner(
+                  quota: quota,
+                  refreshing: _quotaRefreshing,
+                  onRefresh: _refreshQuota,
+                ),
+              ),
+            ),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 920),
               child: Composer(
                 onSend: controller.send,
+                onSendBackground: controller.sendInBackground,
                 sending: state.sending,
                 stopping: state.stopping,
+                enabled: quota == null,
+                disabledHint: 'Monthly budget spent — sending is paused',
                 useRag: state.useRag,
                 useTools: state.useTools,
                 onToggleRag: controller.toggleRag,
@@ -321,12 +410,56 @@ class _HeaderModelChip extends StatelessWidget {
   }
 }
 
-class _EmptyChat extends StatelessWidget {
-  const _EmptyChat();
+/// Avatar + name of the session's assistant ("Plain chat" when none). An
+/// assistant that is no longer listed (deleted) shows as "Assistant".
+class _HeaderAssistantChip extends StatelessWidget {
+  const _HeaderAssistantChip({required this.assistant, required this.hasId});
+  final Assistant? assistant;
+  final bool hasId;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final label = assistant?.name ?? (hasId ? 'Assistant' : 'Plain chat');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 3, 8, 3),
+      decoration: BoxDecoration(
+        color: t.surfaceHigh,
+        borderRadius: const BorderRadius.all(NexusRadius.pill),
+        border: Border.all(
+          color: assistant == null ? t.border : NexusColors.crimson.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AssistantAvatar(assistant: assistant, size: 22),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: t.textPrimary, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(Icons.expand_more_rounded, size: 14, color: t.textMuted),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyChat extends StatelessWidget {
+  const _EmptyChat({this.assistant});
+  final Assistant? assistant;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final a = assistant;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
@@ -335,10 +468,10 @@ class _EmptyChat extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const NexusLogo(size: 64),
+              if (a == null) const NexusLogo(size: 64) else AssistantAvatar(assistant: a, size: 64),
               const SizedBox(height: NexusSpacing.lg),
               Text(
-                'How can I help today?',
+                a == null ? 'How can I help today?' : a.name,
                 style: TextStyle(
                   color: t.textPrimary,
                   fontSize: 22,
@@ -347,8 +480,10 @@ class _EmptyChat extends StatelessWidget {
               ),
               const SizedBox(height: NexusSpacing.sm),
               Text(
-                'Ask anything. Toggle RAG to ground answers in your documents, pick the Knowledge '
-                'collections to search, or let NexusBot run tools for you.',
+                a?.description?.trim().isNotEmpty == true
+                    ? a!.description!.trim()
+                    : 'Ask anything. Toggle RAG to ground answers in your documents, pick the '
+                        'Knowledge collections to search, or let NexusBot run tools for you.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: t.textSecondary, fontSize: 13.5, height: 1.5),
               ),

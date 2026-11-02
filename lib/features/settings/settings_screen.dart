@@ -14,6 +14,9 @@ import '../auth/auth_repository.dart';
 import '../chat/chat_repository.dart';
 import '../models/model_info.dart';
 import '../models/models_repository.dart';
+import '../orgs/orgs_repository.dart';
+import '../usage/usage_repository.dart';
+import '../usage/usage_widgets.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -45,10 +48,24 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _refreshModels(WidgetRef ref) async {
     ref.invalidate(modelCatalogProvider);
+    ref.invalidate(usageMeProvider);
     try {
       await ref.read(modelCatalogProvider.future);
     } catch (_) {
       // The section shows the error with a retry button.
+    }
+  }
+
+  // ── Memory ───────────────────────────────────────────────────────────
+
+  /// `PATCH /auth/me {memory_enabled}`.
+  Future<void> _setMemoryEnabled(BuildContext context, WidgetRef ref, bool enabled) async {
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.setMemoryEnabled(enabled);
+      ref.invalidate(currentUserProvider);
+    } catch (e) {
+      if (context.mounted) _toast(context, 'Could not update memory: ${errorText(e)}');
     }
   }
 
@@ -178,6 +195,10 @@ class SettingsScreen extends ConsumerWidget {
     final displayName = user.value?.fullName;
     final catalog = ref.watch(modelCatalogProvider);
     final defaultModelId = ref.watch(defaultModelIdProvider);
+    final usage = ref.watch(usageMeProvider);
+    final org = ref.watch(activeOrgProvider).valueOrNull;
+    final memoryEnabled = user.value?.memoryEnabled ?? true;
+    final isServerAdmin = user.value?.isServerAdmin ?? false;
 
     return Scaffold(
       backgroundColor: t.background,
@@ -251,6 +272,68 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
+                  label: 'WORKSPACE',
+                  children: [
+                    _InfoRow(
+                      icon:
+                          org?.isPersonal == false ? Icons.business_rounded : Icons.person_rounded,
+                      label: 'Active workspace',
+                      value: org == null
+                          ? '—'
+                          : org.isPersonal
+                              ? 'Personal'
+                              : '${org.name} · ${org.role.label}',
+                    ),
+                    if (org != null && org.canManage) ...[
+                      const _Divider(),
+                      _ActionTile(
+                        icon: Icons.manage_accounts_rounded,
+                        title: 'Manage workspace',
+                        subtitle: 'Name, budgets, allowed models, members.',
+                        onTap: () => context.go(AppRoutes.orgSettings(org.id)),
+                      ),
+                      const _Divider(),
+                      _ActionTile(
+                        icon: Icons.bar_chart_rounded,
+                        title: 'Usage report',
+                        subtitle: 'Tokens, cost and messages by member, model or day.',
+                        onTap: () => context.go(AppRoutes.orgUsage(org.id)),
+                      ),
+                    ],
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.smart_toy_outlined,
+                      title: 'Assistants',
+                      subtitle: 'Personas to start chats with.',
+                      onTap: () => context.go(AppRoutes.assistants),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: 'USAGE',
+                  children: [
+                    usage.when(
+                      loading: () => const _ModelsPlaceholder(
+                        icon: Icons.hourglass_empty_rounded,
+                        text: 'Loading usage…',
+                      ),
+                      error: (e, _) => _ModelsPlaceholder(
+                        icon: Icons.cloud_off_rounded,
+                        text: 'Could not load usage: ${errorText(e)}',
+                        action: TextButton(
+                          onPressed: () => ref.invalidate(usageMeProvider),
+                          child: const Text('Retry'),
+                        ),
+                      ),
+                      data: (summary) => UsageSummaryView(summary: summary),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
                   label: 'APPEARANCE',
                   children: [
                     _ThemeRow(value: prefs.themeMode, onChanged: prefsCtrl.setThemeMode),
@@ -283,6 +366,21 @@ class SettingsScreen extends ConsumerWidget {
                       subtitle: 'Let the agent call tools (calculator, search, …) in new chats.',
                       value: prefs.toolsByDefault,
                       onChanged: prefsCtrl.setTools,
+                    ),
+                    const _Divider(),
+                    _SwitchTile(
+                      icon: Icons.psychology_outlined,
+                      title: 'Memory',
+                      subtitle: 'Remember facts and preferences from chats and use them later.',
+                      value: memoryEnabled,
+                      onChanged: (v) => _setMemoryEnabled(context, ref, v),
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.list_alt_rounded,
+                      title: 'What NexusBot remembers',
+                      subtitle: 'Review, edit or forget memories.',
+                      onTap: () => context.go(AppRoutes.memory),
                     ),
                     const _Divider(),
                     _ChoiceTile<StreamTransport>(
@@ -353,11 +451,37 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
 
+                if (isServerAdmin) ...[
+                  const SizedBox(height: NexusSpacing.xl),
+                  _Section(
+                    label: 'ADMINISTRATION',
+                    children: [
+                      _ActionTile(
+                        icon: Icons.insights_rounded,
+                        title: 'Server usage',
+                        subtitle: 'Every workspace, by organization, user, model or day.',
+                        onTap: () => context.go(AppRoutes.adminUsage),
+                      ),
+                      const _Divider(),
+                      _ActionTile(
+                        icon: Icons.thumbs_up_down_outlined,
+                        title: 'Feedback',
+                        subtitle: 'Thumbs up / down left on replies.',
+                        onTap: () => context.go(AppRoutes.adminFeedback),
+                      ),
+                    ],
+                  ),
+                ],
+
                 const SizedBox(height: NexusSpacing.xl),
                 const _Section(
                   label: 'CONNECTION',
                   children: [
-                    _InfoRow(icon: Icons.cloud_outlined, label: 'API base URL', value: Env.apiBaseUrl),
+                    _InfoRow(
+                      icon: Icons.cloud_outlined,
+                      label: 'API base URL',
+                      value: Env.apiBaseUrl,
+                    ),
                   ],
                 ),
 
@@ -984,7 +1108,8 @@ class _ThemeRow extends StatelessWidget {
                     duration: const Duration(milliseconds: 160),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: selected ? NexusColors.crimson.withValues(alpha: 0.12) : t.surfaceHigher,
+                      color:
+                          selected ? NexusColors.crimson.withValues(alpha: 0.12) : t.surfaceHigher,
                       borderRadius: const BorderRadius.all(NexusRadius.md),
                       border: Border.all(
                         color: selected ? NexusColors.crimson : Colors.transparent,
@@ -992,7 +1117,11 @@ class _ThemeRow extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        Icon(opt.$1, size: 18, color: selected ? NexusColors.crimson : t.textSecondary),
+                        Icon(
+                          opt.$1,
+                          size: 18,
+                          color: selected ? NexusColors.crimson : t.textSecondary,
+                        ),
                         const SizedBox(height: 6),
                         Text(
                           opt.$2,

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/admin/admin_feedback_screen.dart';
+import '../features/assistants/assistant_editor_screen.dart';
+import '../features/assistants/assistants_screen.dart';
 import '../features/auth/auth_providers.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
@@ -9,7 +12,10 @@ import '../features/auth/splash_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/collections/collections_screen.dart';
 import '../features/documents/documents_screen.dart';
+import '../features/memory/memory_screen.dart';
+import '../features/orgs/org_settings_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/usage/usage_report_screen.dart';
 import '../shared/home_shell.dart';
 
 /// Route locations. Everything under the shell keeps the sidebar mounted.
@@ -21,8 +27,16 @@ class AppRoutes {
   static const home = '/';
   static const documents = '/documents';
   static const collections = '/collections';
+  static const assistants = '/assistants';
+  static const assistantNew = '/assistants/new';
+  static const memory = '/memory';
   static const settings = '/settings';
+  static const adminUsage = '/admin/usage';
+  static const adminFeedback = '/admin/feedback';
   static String chat(String sessionId) => '/chat/$sessionId';
+  static String assistant(String assistantId) => '/assistants/$assistantId';
+  static String orgSettings(String orgId) => '/orgs/$orgId';
+  static String orgUsage(String orgId) => '/orgs/$orgId/usage';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -83,6 +97,60 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.collections,
             pageBuilder: (_, state) => _fadePage(state.pageKey, const CollectionsScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.assistants,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const AssistantsScreen()),
+            routes: [
+              GoRoute(
+                path: 'new',
+                pageBuilder: (_, state) => _fadePage(state.pageKey, const AssistantEditorScreen()),
+              ),
+              GoRoute(
+                path: ':assistantId',
+                pageBuilder: (_, state) {
+                  final id = state.pathParameters['assistantId']!;
+                  return _fadePage(
+                    ValueKey('assistant-$id'),
+                    AssistantEditorScreen(key: ValueKey(id), assistantId: id),
+                  );
+                },
+              ),
+            ],
+          ),
+          GoRoute(
+            path: AppRoutes.memory,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const MemoryScreen()),
+          ),
+          GoRoute(
+            path: '/orgs/:orgId',
+            pageBuilder: (_, state) {
+              final id = state.pathParameters['orgId']!;
+              return _fadePage(
+                ValueKey('org-$id'),
+                OrgSettingsScreen(key: ValueKey(id), orgId: id),
+              );
+            },
+            routes: [
+              GoRoute(
+                path: 'usage',
+                pageBuilder: (_, state) {
+                  final id = state.pathParameters['orgId']!;
+                  return _fadePage(
+                    ValueKey('org-usage-$id'),
+                    UsageReportScreen(key: ValueKey(id), orgId: id),
+                  );
+                },
+              ),
+            ],
+          ),
+          GoRoute(
+            path: AppRoutes.adminUsage,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const UsageReportScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.adminFeedback,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const AdminFeedbackScreen()),
           ),
           GoRoute(
             path: AppRoutes.settings,

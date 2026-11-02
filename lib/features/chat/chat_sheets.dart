@@ -239,6 +239,78 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
 }
 
 // ============================================================================
+// Feedback comment (thumbs down)
+// ============================================================================
+
+/// Result of [showFeedbackCommentSheet]: [comment] may be empty.
+class FeedbackComment {
+  const FeedbackComment(this.comment);
+  final String comment;
+}
+
+/// Optional comment for a thumbs-down. Returns null when dismissed without
+/// sending (the rating is then not recorded).
+Future<FeedbackComment?> showFeedbackCommentSheet(BuildContext context) {
+  return showModalBottomSheet<FeedbackComment>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: context.tokens.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: NexusRadius.xl),
+    ),
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+      child: const _FeedbackCommentSheet(),
+    ),
+  );
+}
+
+class _FeedbackCommentSheet extends StatefulWidget {
+  const _FeedbackCommentSheet();
+
+  @override
+  State<_FeedbackCommentSheet> createState() => _FeedbackCommentSheetState();
+}
+
+class _FeedbackCommentSheetState extends State<_FeedbackCommentSheet> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetScaffold(
+      title: 'What went wrong?',
+      subtitle: 'Optional — a short note helps improve the answers. The thumbs-down is '
+          'recorded either way.',
+      actions: [
+        const Spacer(),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(FeedbackComment(_ctrl.text.trim())),
+          style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
+          child: const Text('Send'),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.only(top: NexusSpacing.sm),
+        child: TextField(
+          controller: _ctrl,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: 'e.g. The answer ignored my document'),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // Model picker (header menu + composer chip)
 // ============================================================================
 

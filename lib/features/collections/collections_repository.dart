@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/paging.dart';
 import '../auth/auth_providers.dart';
+import '../orgs/orgs_repository.dart';
 import 'collection_model.dart';
 
 class CollectionsRepository {
@@ -73,10 +74,12 @@ final collectionsRepositoryProvider = FutureProvider<CollectionsRepository>((ref
   return CollectionsRepository(client);
 });
 
-/// The user's collections, cached for the app session (invalidate after any
-/// mutation or on pull-to-refresh) and reloaded when the user changes.
+/// The workspace's collections, cached for the app session (invalidate after
+/// any mutation or on pull-to-refresh) and reloaded when the user or the
+/// active workspace changes.
 final collectionListProvider = FutureProvider<List<Collection>>((ref) async {
   ref.watch(currentUserProvider.select((u) => u.valueOrNull?.id));
+  ref.watch(activeOrgIdProvider);
   final repo = await ref.watch(collectionsRepositoryProvider.future);
   return repo.listAll();
 });

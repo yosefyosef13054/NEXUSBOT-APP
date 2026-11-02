@@ -40,7 +40,10 @@ void main() {
           case 'auth':
             if (frame['token'] == 'good-token') {
               authed = true;
-              send({'type': 'auth_ok', 'data': {'user_id': 'u1'}});
+              send({
+                'type': 'auth_ok',
+                'data': {'user_id': 'u1'},
+              });
               // Unsolicited keep-alive answer; must never reach the app.
               send({'type': 'pong'});
             } else {
@@ -71,18 +74,28 @@ void main() {
             });
           case 'user_message':
             if (!authed) {
-              send({'type': 'error', 'data': {'code': 'unauthorized', 'message': 'auth first'}});
+              send({
+                'type': 'error',
+                'data': {'code': 'unauthorized', 'message': 'auth first'},
+              });
               return;
             }
             if (generating) {
-              send({'type': 'error', 'data': {'code': 'busy', 'message': 'generation in progress'}});
+              send({
+                'type': 'error',
+                'data': {'code': 'busy', 'message': 'generation in progress'},
+              });
               return;
             }
             generating = true;
             stopRequested = false;
             send({
               'type': 'user_message',
-              'data': {'id': 'u-1', 'content': frame['content'], 'created_at': '2026-01-01T00:00:00Z'},
+              'data': {
+                'id': 'u-1',
+                'content': frame['content'],
+                'created_at': '2026-01-01T00:00:00Z',
+              },
             });
             final text = StringBuffer();
             for (var i = 0; i < 6; i++) {
@@ -91,7 +104,10 @@ void main() {
               text.write('t$i ');
               await Future<void>.delayed(const Duration(milliseconds: 25));
             }
-            send({'type': 'usage', 'data': {'prompt_tokens': 3, 'completion_tokens': 6, 'total_tokens': 9}});
+            send({
+              'type': 'usage',
+              'data': {'prompt_tokens': 3, 'completion_tokens': 6, 'total_tokens': 9},
+            });
             send({
               'type': 'done',
               'data': {'text': text.toString(), 'latency_ms': 150, 'interrupted': stopRequested},
@@ -122,8 +138,8 @@ void main() {
 
   tearDown(() => server.close(force: true));
 
-  Future<ChatWebSocket> connect([String token = 'good-token']) =>
-      ChatWebSocket.connect(sessionId: 's1', token: token, baseUrl: baseUrl);
+  Future<ChatWebSocket> connect([String token = 'good-token', String? orgId]) =>
+      ChatWebSocket.connect(sessionId: 's1', token: token, orgId: orgId, baseUrl: baseUrl);
 
   /// Collects events until the terminal `assistant_message` / `error`.
   Future<List<StreamEvent>> collect(ChatWebSocket ws) async {
@@ -162,7 +178,23 @@ void main() {
     final last = events.last as AssistantMessageEvent;
     expect(last.id, 'a-1');
     expect(last.interrupted, isFalse);
-    expect(events.whereType<UnknownEvent>(), isEmpty, reason: 'auth_ok/pong are consumed internally');
+    expect(
+      events.whereType<UnknownEvent>(),
+      isEmpty,
+      reason: 'auth_ok/pong are consumed internally',
+    );
+  });
+
+  test('the auth frame carries org_id only when a workspace other than the personal one is active',
+      () async {
+    final plain = await connect();
+    await plain.close();
+    expect(received.first.containsKey('org_id'), isFalse);
+
+    received.clear();
+    final scoped = await connect('good-token', 'org-7');
+    await scoped.close();
+    expect(received.first, {'type': 'auth', 'token': 'good-token', 'org_id': 'org-7'});
   });
 
   test('a rejected auth frame fails connect with an auth ApiException', () async {

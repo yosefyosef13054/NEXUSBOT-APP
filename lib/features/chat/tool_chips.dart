@@ -232,7 +232,8 @@ class _StatusLabel extends StatelessWidget {
         const SizedBox(width: 3),
         Text(
           status.name.toUpperCase(),
-          style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1),
+          style:
+              TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
       ],
     );

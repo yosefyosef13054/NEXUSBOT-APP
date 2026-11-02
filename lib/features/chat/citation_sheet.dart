@@ -219,7 +219,9 @@ class _ScoreBadge extends StatelessWidget {
         border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.5)),
       ),
       child: Text(
-        match == null ? '${(score * 100).toStringAsFixed(0)}% match' : '${(score * 100).toStringAsFixed(0)}% · $match',
+        match == null
+            ? '${(score * 100).toStringAsFixed(0)}% match'
+            : '${(score * 100).toStringAsFixed(0)}% · $match',
         style: const TextStyle(
           color: NexusColors.crimson,
           fontSize: 11,
