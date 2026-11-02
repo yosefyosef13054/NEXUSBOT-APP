@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api_client.dart';
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'auth_providers.dart';
@@ -40,9 +41,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final repo = await ref.read(authRepositoryProvider.future);
       await repo.login(email: _email.text.trim(), password: _password.text);
       ref.invalidate(currentUserProvider);
-      if (mounted) context.go('/');
+      if (mounted) context.go(AppRoutes.home);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -63,13 +64,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
+                      const Center(
                         child: Column(
                           children: [
-                            const NexusLogo(size: 64),
-                            const SizedBox(height: NexusSpacing.lg),
-                            const NexusWordmark(fontSize: 28),
-                            const SizedBox(height: NexusSpacing.sm),
+                            NexusLogo(size: 64),
+                            SizedBox(height: NexusSpacing.lg),
+                            NexusWordmark(fontSize: 28),
+                            SizedBox(height: NexusSpacing.sm),
                             Text(
                               'WELCOME BACK',
                               style: TextStyle(
@@ -110,8 +111,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           hintText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline, size: 20),
                           suffixIcon: IconButton(
-                            icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                                size: 20),
+                            icon: Icon(
+                              _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              size: 20,
+                            ),
                             onPressed: () => setState(() => _obscure = !_obscure),
                           ),
                         ),
@@ -138,7 +141,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             style: TextStyle(color: context.tokens.textSecondary),
                           ),
                           TextButton(
-                            onPressed: () => context.go('/register'),
+                            onPressed: () => context.go(AppRoutes.register),
                             child: const Text(
                               'Create an account',
                               style: TextStyle(color: NexusColors.crimson, fontWeight: FontWeight.w700),

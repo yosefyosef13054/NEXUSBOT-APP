@@ -68,6 +68,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                 isUser: _isUser,
                 child: _BubbleContent(message: widget.message),
               ),
+              if (widget.message.interrupted && !widget.message.streaming) ...[
+                const SizedBox(height: NexusSpacing.xs),
+                const _StoppedMarker(),
+              ],
               if (widget.message.citations.isNotEmpty) ...[
                 const SizedBox(height: NexusSpacing.sm),
                 CitationsStrip(citations: widget.message.citations),
@@ -139,6 +143,33 @@ class _MessageActionsRow extends StatelessWidget {
             onTap: onRegenerate!,
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Small "stopped" marker for a reply whose generation was interrupted
+/// (the bubble holds the partial text the server persisted).
+class _StoppedMarker extends StatelessWidget {
+  const _StoppedMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.stop_circle_outlined, size: 12, color: t.textMuted),
+        const SizedBox(width: 4),
+        Text(
+          'Stopped',
+          style: TextStyle(
+            color: t.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
       ],
     );
   }
@@ -361,32 +392,33 @@ class _ToolCallStrip extends StatelessWidget {
     return Wrap(
       spacing: NexusSpacing.xs,
       runSpacing: NexusSpacing.xs,
-      children: toolCalls
-          .map((tc) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: t.surfaceHigh,
-                  borderRadius: const BorderRadius.all(NexusRadius.pill),
-                  border: Border.all(color: NexusColors.crimson.withOpacity(0.5)),
+      children: [
+        for (final tc in toolCalls)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: t.surfaceHigh,
+              borderRadius: const BorderRadius.all(NexusRadius.pill),
+              border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.build_rounded, size: 12, color: NexusColors.crimson),
+                const SizedBox(width: 4),
+                Text(
+                  tc.tool,
+                  style: TextStyle(
+                    color: t.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.build_rounded, size: 12, color: NexusColors.crimson),
-                    const SizedBox(width: 4),
-                    Text(
-                      tc.tool,
-                      style: TextStyle(
-                        color: t.textPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ))
-          .toList(),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -479,10 +511,14 @@ class Composer extends StatefulWidget {
     required this.onToggleRag,
     required this.onToggleTools,
     required this.onStop,
+    this.stopping = false,
   });
 
   final void Function(String) onSend;
   final bool sending;
+
+  /// Stop was requested; waiting for the server to finalise the reply.
+  final bool stopping;
   final bool useRag;
   final bool useTools;
   final ValueChanged<bool> onToggleRag;
@@ -523,7 +559,11 @@ class _ComposerState extends State<Composer> {
           border: Border(top: BorderSide(color: t.border)),
         ),
         padding: const EdgeInsets.fromLTRB(
-            NexusSpacing.md, NexusSpacing.sm, NexusSpacing.md, NexusSpacing.md),
+          NexusSpacing.md,
+          NexusSpacing.sm,
+          NexusSpacing.md,
+          NexusSpacing.md,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 920),
           child: Column(
@@ -555,7 +595,9 @@ class _ComposerState extends State<Composer> {
                   border: Border.all(color: t.border),
                 ),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: NexusSpacing.md, vertical: NexusSpacing.xs),
+                  horizontal: NexusSpacing.md,
+                  vertical: NexusSpacing.xs,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -577,6 +619,7 @@ class _ComposerState extends State<Composer> {
                     const SizedBox(width: 4),
                     _SendOrStop(
                       sending: widget.sending,
+                      stopping: widget.stopping,
                       onSend: _send,
                       onStop: widget.onStop,
                     ),
@@ -616,7 +659,7 @@ class _ToggleChip extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color: active ? NexusColors.crimson.withOpacity(0.15) : t.surfaceHigh,
+            color: active ? NexusColors.crimson.withValues(alpha: 0.15) : t.surfaceHigh,
             borderRadius: const BorderRadius.all(NexusRadius.pill),
             border: Border.all(color: active ? NexusColors.crimson : t.border),
           ),
@@ -645,19 +688,29 @@ class _ToggleChip extends StatelessWidget {
 class _SendOrStop extends StatelessWidget {
   const _SendOrStop({
     required this.sending,
+    required this.stopping,
     required this.onSend,
     required this.onStop,
   });
 
   final bool sending;
+  final bool stopping;
   final VoidCallback onSend;
   final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final VoidCallback? onTap;
+    if (stopping) {
+      onTap = null;
+    } else if (sending) {
+      onTap = onStop;
+    } else {
+      onTap = onSend;
+    }
     return GestureDetector(
-      onTap: sending ? onStop : onSend,
+      onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
         width: 38,
@@ -677,11 +730,22 @@ class _SendOrStop extends StatelessWidget {
                   ),
                 ],
         ),
-        child: Icon(
-          sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-          color: sending ? t.textPrimary : Colors.white,
-          size: 18,
-        ),
+        child: stopping
+            ? Center(
+                child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(t.textMuted),
+                  ),
+                ),
+              )
+            : Icon(
+                sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+                color: sending ? t.textPrimary : Colors.white,
+                size: 18,
+              ),
       ),
     );
   }

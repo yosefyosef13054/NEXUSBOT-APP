@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_exception.dart';
+import '../core/preferences.dart';
+import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../features/auth/auth_providers.dart';
@@ -9,32 +12,39 @@ import '../features/auth/auth_repository.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
 
-/// Persistent left sidebar shown on tablet/desktop. Contains:
+/// Persistent left sidebar shown on tablet/desktop (and inside the drawer on
+/// mobile). Contains:
 /// - Brand
 /// - "New chat" button
 /// - Search field
 /// - Session list (with rename/delete actions)
+/// - Documents / Settings links
 /// - User profile dropdown (settings + sign out)
+///
+/// Navigation goes through the router (`context.go`), so the selected session
+/// and active section are derived from the current location.
 class Sidebar extends ConsumerStatefulWidget {
   const Sidebar({
     super.key,
     required this.selectedSessionId,
-    required this.onSelectSession,
-    required this.onOpenSettings,
-    required this.onOpenDocuments,
+    required this.location,
     this.width = 280,
     this.showClose,
+    this.onNavigated,
   });
 
   final String? selectedSessionId;
-  final void Function(String sessionId) onSelectSession;
-  final VoidCallback onOpenSettings;
-  final VoidCallback onOpenDocuments;
+
+  /// Current route path (highlights Documents / Settings).
+  final String location;
   final double width;
 
   /// If set, shown as a close button in the header (used when the sidebar
   /// is rendered inside a drawer).
   final VoidCallback? showClose;
+
+  /// Called after any navigation (closes the drawer on mobile).
+  final VoidCallback? onNavigated;
 
   @override
   ConsumerState<Sidebar> createState() => _SidebarState();
@@ -50,13 +60,26 @@ class _SidebarState extends ConsumerState<Sidebar> {
     super.dispose();
   }
 
+  void _go(String location) {
+    context.go(location);
+    widget.onNavigated?.call();
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+  }
+
   Future<void> _newChat() async {
     setState(() => _creating = true);
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final s = await repo.createSession();
+      final s = await repo.createSession(model: ref.read(prefsProvider).model);
       ref.invalidate(sessionListProvider);
-      widget.onSelectSession(s.id);
+      if (!mounted) return;
+      _go(AppRoutes.chat(s.id));
+    } catch (e) {
+      _showError(e);
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -69,9 +92,13 @@ class _SidebarState extends ConsumerState<Sidebar> {
     );
     if (!mounted) return;
     if (newTitle == null || newTitle.isEmpty || newTitle == s.title) return;
-    final repo = await ref.read(chatRepositoryProvider.future);
-    await repo.renameSession(s.id, newTitle);
-    ref.invalidate(sessionListProvider);
+    try {
+      final repo = await ref.read(chatRepositoryProvider.future);
+      await repo.renameSession(s.id, newTitle);
+      ref.invalidate(sessionListProvider);
+    } catch (e) {
+      _showError(e);
+    }
   }
 
   Future<void> _delete(ChatSession s) async {
@@ -91,10 +118,15 @@ class _SidebarState extends ConsumerState<Sidebar> {
       ),
     );
     if (ok != true) return;
-    final repo = await ref.read(chatRepositoryProvider.future);
-    await repo.deleteSession(s.id);
-    ref.invalidate(sessionListProvider);
-    if (widget.selectedSessionId == s.id) widget.onSelectSession('');
+    try {
+      final repo = await ref.read(chatRepositoryProvider.future);
+      await repo.deleteSession(s.id);
+      ref.invalidate(sessionListProvider);
+      if (!mounted) return;
+      if (widget.selectedSessionId == s.id) _go(AppRoutes.home);
+    } catch (e) {
+      _showError(e);
+    }
   }
 
   Future<void> _logout() async {
@@ -102,7 +134,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
     await repo.logout();
     ref.invalidate(currentUserProvider);
     if (!mounted) return;
-    context.go('/login');
+    context.go(AppRoutes.login);
   }
 
   @override
@@ -200,7 +232,14 @@ class _SidebarState extends ConsumerState<Sidebar> {
               child: sessions.when(
                 loading: () => const _SessionSkeletons(),
                 error: (e, _) => Center(
-                  child: Text('$e', style: TextStyle(color: t.textMuted, fontSize: 12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(NexusSpacing.lg),
+                    child: Text(
+                      errorText(e),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: t.textMuted, fontSize: 12),
+                    ),
+                  ),
                 ),
                 data: (list) {
                   final filtered = _filtered(list);
@@ -221,7 +260,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                       return _SessionTile(
                         session: s,
                         selected: selected,
-                        onTap: () => widget.onSelectSession(s.id),
+                        onTap: () => _go(AppRoutes.chat(s.id)),
                         onRename: () => _rename(s),
                         onDelete: () => _delete(s),
                       );
@@ -237,12 +276,14 @@ class _SidebarState extends ConsumerState<Sidebar> {
             _SidebarLink(
               icon: Icons.menu_book_rounded,
               label: 'Documents',
-              onTap: widget.onOpenDocuments,
+              active: widget.location.startsWith(AppRoutes.documents),
+              onTap: () => _go(AppRoutes.documents),
             ),
             _SidebarLink(
               icon: Icons.settings_rounded,
               label: 'Settings',
-              onTap: widget.onOpenSettings,
+              active: widget.location.startsWith(AppRoutes.settings),
+              onTap: () => _go(AppRoutes.settings),
             ),
 
             // ── Profile dropdown ─────────────────────────────────────
@@ -260,7 +301,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                 return PopupMenuButton<String>(
                   offset: const Offset(0, -56),
                   onSelected: (v) {
-                    if (v == 'settings') widget.onOpenSettings();
+                    if (v == 'settings') _go(AppRoutes.settings);
                     if (v == 'logout') _logout();
                   },
                   itemBuilder: (_) => const [
@@ -364,10 +405,10 @@ class _SessionTile extends StatelessWidget {
             duration: const Duration(milliseconds: 140),
             padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.md, vertical: 10),
             decoration: BoxDecoration(
-              color: selected ? NexusColors.crimson.withOpacity(0.10) : Colors.transparent,
+              color: selected ? NexusColors.crimson.withValues(alpha: 0.10) : Colors.transparent,
               borderRadius: const BorderRadius.all(NexusRadius.md),
               border: Border.all(
-                color: selected ? NexusColors.crimson.withOpacity(0.4) : Colors.transparent,
+                color: selected ? NexusColors.crimson.withValues(alpha: 0.4) : Colors.transparent,
               ),
             ),
             child: Row(
@@ -413,14 +454,21 @@ class _SessionTile extends StatelessWidget {
 }
 
 class _SidebarLink extends StatelessWidget {
-  const _SidebarLink({required this.icon, required this.label, required this.onTap});
+  const _SidebarLink({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final color = active ? NexusColors.crimson : t.textSecondary;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -429,14 +477,14 @@ class _SidebarLink extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: 14),
           child: Row(
             children: [
-              Icon(icon, size: 16, color: t.textSecondary),
+              Icon(icon, size: 16, color: color),
               const SizedBox(width: NexusSpacing.md),
               Text(
                 label,
                 style: TextStyle(
-                  color: t.textSecondary,
+                  color: active ? t.textPrimary : t.textSecondary,
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w600,
                 ),
               ),
             ],

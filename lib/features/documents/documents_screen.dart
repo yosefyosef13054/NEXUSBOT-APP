@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
@@ -17,8 +20,28 @@ class DocumentsScreen extends ConsumerStatefulWidget {
 }
 
 class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
+  /// While any document is still ingesting, re-fetch the list on this cadence
+  /// so the progress badge moves without a manual refresh.
+  static const pollInterval = Duration(seconds: 3);
+
   String? _uploadingName;
   double _uploadProgress = 0;
+  Timer? _poll;
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _syncPolling(bool needed) {
+    if (needed && _poll == null) {
+      _poll = Timer.periodic(pollInterval, (_) => ref.invalidate(documentListProvider));
+    } else if (!needed && _poll != null) {
+      _poll!.cancel();
+      _poll = null;
+    }
+  }
 
   Future<void> _pickAndUpload() async {
     final result = await FilePicker.platform.pickFiles(
@@ -34,19 +57,27 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     });
     try {
       final repo = await ref.read(documentsRepositoryProvider.future);
-      await repo.upload(
+      final result = await repo.upload(
         path: picked.path!,
         filename: picked.name,
-        onProgress: (p) => setState(() => _uploadProgress = p),
+        onProgress: (p) {
+          if (mounted) setState(() => _uploadProgress = p);
+        },
       );
       ref.invalidate(documentListProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Document queued for indexing')),
+        SnackBar(
+          content: Text(
+            result.queued
+                ? 'Document queued for indexing'
+                : '“${result.document.name}” was already uploaded — showing the existing copy',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     } finally {
       if (mounted) setState(() => _uploadingName = null);
     }
@@ -69,15 +100,21 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       ),
     );
     if (ok != true) return;
-    final repo = await ref.read(documentsRepositoryProvider.future);
-    await repo.delete(d.id);
-    ref.invalidate(documentListProvider);
+    try {
+      final repo = await ref.read(documentsRepositoryProvider.future);
+      await repo.delete(d.id);
+      ref.invalidate(documentListProvider);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final docs = ref.watch(documentListProvider);
+    _syncPolling(docs.valueOrNull?.any((d) => d.isInFlight) ?? false);
     return Scaffold(
       backgroundColor: t.background,
       appBar: AppBar(
@@ -110,7 +147,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                 error: (e, _) => EmptyState(
                   icon: Icons.cloud_off_rounded,
                   title: 'Could not load documents',
-                  subtitle: '$e',
+                  subtitle: errorText(e),
                 ),
                 data: (list) {
                   if (list.isEmpty) {
@@ -129,7 +166,11 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                   }
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(
-                        NexusSpacing.lg, NexusSpacing.md, NexusSpacing.lg, NexusSpacing.xxxl + 60),
+                      NexusSpacing.lg,
+                      NexusSpacing.md,
+                      NexusSpacing.lg,
+                      NexusSpacing.xxxl + 60,
+                    ),
                     itemCount: list.length,
                     separatorBuilder: (_, __) => const SizedBox(height: NexusSpacing.sm),
                     itemBuilder: (_, i) =>
@@ -166,7 +207,11 @@ class _UploadProgressBar extends StatelessWidget {
     final t = context.tokens;
     return Container(
       padding: const EdgeInsets.fromLTRB(
-          NexusSpacing.lg, NexusSpacing.md, NexusSpacing.lg, NexusSpacing.md),
+        NexusSpacing.lg,
+        NexusSpacing.md,
+        NexusSpacing.lg,
+        NexusSpacing.md,
+      ),
       color: t.surfaceHigh,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +305,7 @@ class _DocumentTile extends StatelessWidget {
               ],
             ),
           ),
-          _StatusBadge(status: doc.status),
+          _StatusBadge(status: doc.status, progress: doc.progress),
           const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.delete_outline_rounded, size: 18),
@@ -299,14 +344,20 @@ class _DocumentTile extends StatelessWidget {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
+  const _StatusBadge({required this.status, this.progress});
   final DocumentStatus status;
+
+  /// Ingest percent (0–100) shown while processing.
+  final int? progress;
 
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
       DocumentStatus.pending => ('PENDING', context.tokens.textMuted),
-      DocumentStatus.processing => ('INDEXING', NexusColors.warn),
+      DocumentStatus.processing => (
+          progress == null ? 'INDEXING' : 'INDEXING $progress%',
+          NexusColors.warn,
+        ),
       DocumentStatus.ready => ('READY', NexusColors.success),
       DocumentStatus.failed => ('FAILED', NexusColors.crimson),
       DocumentStatus.unknown => ('?', context.tokens.textMuted),
@@ -314,14 +365,18 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: const BorderRadius.all(NexusRadius.pill),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
         label,
         style: TextStyle(
-            color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }

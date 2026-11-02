@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api_client.dart';
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'auth_providers.dart';
@@ -46,9 +47,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       );
       await repo.login(email: _email.text.trim(), password: _password.text);
       ref.invalidate(currentUserProvider);
-      if (mounted) context.go('/');
+      if (mounted) context.go(AppRoutes.home);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -60,7 +61,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go('/login'),
+          onPressed: () => context.go(AppRoutes.login),
         ),
       ),
       body: EmberBackground(
@@ -75,13 +76,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
+                      const Center(
                         child: Column(
                           children: [
-                            const NexusLogo(size: 56),
-                            const SizedBox(height: NexusSpacing.lg),
-                            const NexusWordmark(fontSize: 24),
-                            const SizedBox(height: NexusSpacing.sm),
+                            NexusLogo(size: 56),
+                            SizedBox(height: NexusSpacing.lg),
+                            NexusWordmark(fontSize: 24),
+                            SizedBox(height: NexusSpacing.sm),
                             Text(
                               'CREATE ACCOUNT',
                               style: TextStyle(
@@ -152,7 +153,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             style: TextStyle(color: context.tokens.textSecondary),
                           ),
                           TextButton(
-                            onPressed: () => context.go('/login'),
+                            onPressed: () => context.go(AppRoutes.login),
                             child: const Text(
                               'Sign in',
                               style: TextStyle(color: NexusColors.crimson, fontWeight: FontWeight.w700),

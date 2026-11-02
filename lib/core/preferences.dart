@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'env.dart';
+
 /// Streaming transport for assistant replies.
 enum StreamTransport { sse, websocket }
 
 /// User preferences persisted to SharedPreferences.
 ///
 /// Single source of truth for app-level settings (theme, transport, model,
-/// streaming toggle). Every screen reads through Riverpod providers below;
-/// no direct SharedPreferences calls elsewhere in the app.
+/// streaming toggle, RAG / tools defaults). Every screen reads through the
+/// Riverpod providers below; no direct SharedPreferences calls elsewhere.
 class AppPrefs {
   const AppPrefs({
     required this.themeMode,
@@ -17,6 +19,7 @@ class AppPrefs {
     required this.model,
     required this.streamingEnabled,
     required this.ragByDefault,
+    required this.toolsByDefault,
   });
 
   final ThemeMode themeMode;
@@ -24,6 +27,7 @@ class AppPrefs {
   final String model;
   final bool streamingEnabled;
   final bool ragByDefault;
+  final bool toolsByDefault;
 
   AppPrefs copyWith({
     ThemeMode? themeMode,
@@ -31,6 +35,7 @@ class AppPrefs {
     String? model,
     bool? streamingEnabled,
     bool? ragByDefault,
+    bool? toolsByDefault,
   }) =>
       AppPrefs(
         themeMode: themeMode ?? this.themeMode,
@@ -38,6 +43,7 @@ class AppPrefs {
         model: model ?? this.model,
         streamingEnabled: streamingEnabled ?? this.streamingEnabled,
         ragByDefault: ragByDefault ?? this.ragByDefault,
+        toolsByDefault: toolsByDefault ?? this.toolsByDefault,
       );
 
   static const defaults = AppPrefs(
@@ -46,6 +52,7 @@ class AppPrefs {
     model: 'gpt-4o-mini',
     streamingEnabled: true,
     ragByDefault: true,
+    toolsByDefault: true,
   );
 }
 
@@ -55,6 +62,7 @@ class _PrefKeys {
   static const model = 'pref.model';
   static const streaming = 'pref.streaming';
   static const rag = 'pref.rag';
+  static const tools = 'pref.tools';
 }
 
 class PrefsController extends StateNotifier<AppPrefs> {
@@ -65,11 +73,13 @@ class PrefsController extends StateNotifier<AppPrefs> {
   static AppPrefs _read(SharedPreferences p) => AppPrefs(
         themeMode: ThemeMode.values[
             p.getInt(_PrefKeys.themeMode) ?? ThemeMode.system.index],
-        transport: StreamTransport.values[
-            p.getInt(_PrefKeys.transport) ?? StreamTransport.sse.index],
+        // `--dart-define=USE_WEBSOCKET=true` picks the default; Settings wins.
+        transport: StreamTransport.values[p.getInt(_PrefKeys.transport) ??
+            (Env.useWebSocketStreaming ? StreamTransport.websocket : StreamTransport.sse).index],
         model: p.getString(_PrefKeys.model) ?? AppPrefs.defaults.model,
         streamingEnabled: p.getBool(_PrefKeys.streaming) ?? true,
         ragByDefault: p.getBool(_PrefKeys.rag) ?? true,
+        toolsByDefault: p.getBool(_PrefKeys.tools) ?? true,
       );
 
   Future<void> setThemeMode(ThemeMode m) async {
@@ -95,6 +105,11 @@ class PrefsController extends StateNotifier<AppPrefs> {
   Future<void> setRag(bool v) async {
     state = state.copyWith(ragByDefault: v);
     await _prefs.setBool(_PrefKeys.rag, v);
+  }
+
+  Future<void> setTools(bool v) async {
+    state = state.copyWith(toolsByDefault: v);
+    await _prefs.setBool(_PrefKeys.tools, v);
   }
 }
 

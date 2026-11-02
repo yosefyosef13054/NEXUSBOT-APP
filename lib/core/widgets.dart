@@ -318,14 +318,14 @@ class SkeletonRow extends StatelessWidget {
         borderRadius: const BorderRadius.all(NexusRadius.lg),
         border: Border.all(color: t.border),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Skeleton(width: 44, height: 44, radius: 12),
-          const SizedBox(width: NexusSpacing.md),
+          Skeleton(width: 44, height: 44, radius: 12),
+          SizedBox(width: NexusSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Skeleton(width: 160, height: 14),
                 SizedBox(height: 8),
                 Skeleton(width: 90, height: 10),

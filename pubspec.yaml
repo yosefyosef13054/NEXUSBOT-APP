@@ -4,8 +4,8 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.5.0 <4.0.0'
-  flutter: '>=3.24.0'
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.27.0'
 
 dependencies:
   flutter:
@@ -19,7 +19,6 @@ dependencies:
 
   # --- Networking ---
   dio: ^5.7.0
-  flutter_client_sse: ^2.0.2
   web_socket_channel: ^3.0.1
 
   # --- Persistence ---

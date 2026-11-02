@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import 'auth_providers.dart';
@@ -15,21 +16,21 @@ class SplashScreen extends ConsumerWidget {
       next.whenOrNull(
         data: (user) {
           if (!context.mounted) return;
-          context.go(user == null ? '/login' : '/');
+          context.go(user == null ? AppRoutes.login : AppRoutes.home);
         },
       );
     });
 
-    return Scaffold(
+    return const Scaffold(
       body: EmberBackground(
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const NexusLogo(size: 92),
-              const SizedBox(height: NexusSpacing.xl),
-              const NexusWordmark(fontSize: 38),
-              const SizedBox(height: NexusSpacing.sm),
+              NexusLogo(size: 92),
+              SizedBox(height: NexusSpacing.xl),
+              NexusWordmark(fontSize: 38),
+              SizedBox(height: NexusSpacing.sm),
               Text(
                 'AI ENGINE · LOADING',
                 style: TextStyle(
@@ -39,8 +40,8 @@ class SplashScreen extends ConsumerWidget {
                   letterSpacing: 4,
                 ),
               ),
-              const SizedBox(height: NexusSpacing.xxl),
-              const SizedBox(
+              SizedBox(height: NexusSpacing.xxl),
+              SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(

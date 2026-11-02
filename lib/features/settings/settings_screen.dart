@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/env.dart';
 import '../../core/preferences.dart';
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
@@ -20,43 +22,125 @@ const _availableModels = [
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
+  void _toast(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ── Account actions ──────────────────────────────────────────────────
+
+  Future<void> _editDisplayName(BuildContext context, WidgetRef ref, String? current) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextPromptDialog(
+        title: 'Display name',
+        hint: 'Your name',
+        initial: current ?? '',
+        confirmLabel: 'Save',
+      ),
+    );
+    if (name == null || !context.mounted) return;
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.updateProfile(fullName: name.trim());
+      ref.invalidate(currentUserProvider);
+      if (context.mounted) _toast(context, 'Display name updated');
+    } catch (e) {
+      if (context.mounted) _toast(context, errorText(e));
+    }
+  }
+
+  Future<void> _changePassword(BuildContext context, WidgetRef ref) async {
+    final result = await showDialog<({String current, String next})>(
+      context: context,
+      builder: (_) => const _ChangePasswordDialog(),
+    );
+    if (result == null || !context.mounted) return;
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.changePassword(currentPassword: result.current, newPassword: result.next);
+      if (context.mounted) {
+        _toast(context, 'Password changed. Other devices have been signed out.');
+      }
+    } catch (e) {
+      if (context.mounted) _toast(context, errorText(e));
+    }
+  }
+
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     final repo = await ref.read(authRepositoryProvider.future);
     await repo.logout();
     ref.invalidate(currentUserProvider);
     if (!context.mounted) return;
-    context.go('/login');
+    context.go(AppRoutes.login);
+  }
+
+  Future<void> _logoutEverywhere(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => const _ConfirmDialog(
+        title: 'Sign out everywhere?',
+        message: 'Every device signed in to this account will have to sign in again.',
+        confirmLabel: 'Sign out everywhere',
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.logoutAll();
+      ref.invalidate(currentUserProvider);
+      if (!context.mounted) return;
+      context.go(AppRoutes.login);
+    } catch (e) {
+      if (context.mounted) _toast(context, errorText(e));
+    }
   }
 
   Future<void> _clearAllChats(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete all chats?'),
-        content: const Text(
-          'This deletes every chat session for your account. Documents are preserved.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Delete all'),
-          ),
-        ],
+      builder: (ctx) => const _ConfirmDialog(
+        title: 'Delete all chats?',
+        message: 'This deletes every chat session for your account. Documents are preserved.',
+        confirmLabel: 'Delete all',
       ),
     );
-    if (ok != true) return;
-    final repo = await ref.read(chatRepositoryProvider.future);
-    final sessions = await repo.listSessions();
-    for (final s in sessions) {
-      await repo.deleteSession(s.id);
+    if (ok != true || !context.mounted) return;
+    try {
+      final repo = await ref.read(chatRepositoryProvider.future);
+      final sessions = await repo.listSessions();
+      for (final s in sessions) {
+        await repo.deleteSession(s.id);
+      }
+      ref.invalidate(sessionListProvider);
+      if (context.mounted) _toast(context, 'Deleted ${sessions.length} chats');
+    } catch (e) {
+      if (context.mounted) _toast(context, errorText(e));
     }
-    ref.invalidate(sessionListProvider);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted ${sessions.length} chats')),
-      );
+  }
+
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final password = await showDialog<String>(
+      context: context,
+      builder: (_) => const _TextPromptDialog(
+        title: 'Delete account?',
+        message: 'Your account, chats and documents will be removed. '
+            'This can’t be undone. Enter your password to confirm.',
+        hint: 'Password',
+        obscure: true,
+        confirmLabel: 'Delete account',
+        danger: true,
+      ),
+    );
+    if (password == null || password.isEmpty || !context.mounted) return;
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.deleteAccount(password: password);
+      ref.invalidate(currentUserProvider);
+      if (!context.mounted) return;
+      context.go(AppRoutes.login);
+    } catch (e) {
+      if (context.mounted) _toast(context, errorText(e));
     }
   }
 
@@ -66,6 +150,7 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final prefs = ref.watch(prefsProvider);
     final prefsCtrl = ref.read(prefsProvider.notifier);
+    final displayName = user.value?.fullName;
 
     return Scaffold(
       backgroundColor: t.background,
@@ -113,11 +198,12 @@ class SettingsScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user.value?.fullName?.isNotEmpty == true
-                                ? user.value!.fullName!
-                                : 'Signed in',
+                            displayName?.isNotEmpty == true ? displayName! : 'Signed in',
                             style: TextStyle(
-                                color: t.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+                              color: t.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -159,6 +245,14 @@ class SettingsScreen extends ConsumerWidget {
                     onChanged: prefsCtrl.setRag,
                   ),
                   const _Divider(),
+                  _SwitchTile(
+                    icon: Icons.build_rounded,
+                    title: 'Use tools by default',
+                    subtitle: 'Let the agent call tools (calculator, search, …) in new chats.',
+                    value: prefs.toolsByDefault,
+                    onChanged: prefsCtrl.setTools,
+                  ),
+                  const _Divider(),
                   _ChoiceTile<StreamTransport>(
                     icon: Icons.swap_horiz_rounded,
                     title: 'Stream transport',
@@ -190,7 +284,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
 
               const SizedBox(height: NexusSpacing.xl),
-              _Section(
+              const _Section(
                 label: 'CONNECTION',
                 children: [
                   _InfoRow(icon: Icons.cloud_outlined, label: 'API base URL', value: Env.apiBaseUrl),
@@ -201,6 +295,20 @@ class SettingsScreen extends ConsumerWidget {
               _Section(
                 label: 'ACCOUNT',
                 children: [
+                  _ActionTile(
+                    icon: Icons.person_outline_rounded,
+                    title: 'Display name',
+                    subtitle: displayName?.isNotEmpty == true ? displayName! : 'Not set',
+                    onTap: () => _editDisplayName(context, ref, displayName),
+                  ),
+                  const _Divider(),
+                  _ActionTile(
+                    icon: Icons.password_rounded,
+                    title: 'Change password',
+                    subtitle: 'Signs out every other device.',
+                    onTap: () => _changePassword(context, ref),
+                  ),
+                  const _Divider(),
                   _ActionTile(
                     icon: Icons.delete_sweep_rounded,
                     title: 'Clear all chats',
@@ -214,6 +322,22 @@ class SettingsScreen extends ConsumerWidget {
                     title: 'Sign out',
                     subtitle: user.value?.email ?? '',
                     onTap: () => _logout(context, ref),
+                    danger: true,
+                  ),
+                  const _Divider(),
+                  _ActionTile(
+                    icon: Icons.devices_other_rounded,
+                    title: 'Sign out everywhere',
+                    subtitle: 'Revoke every signed-in device.',
+                    onTap: () => _logoutEverywhere(context, ref),
+                    danger: true,
+                  ),
+                  const _Divider(),
+                  _ActionTile(
+                    icon: Icons.delete_forever_rounded,
+                    title: 'Delete account',
+                    subtitle: 'Permanently remove your account and data.',
+                    onTap: () => _deleteAccount(context, ref),
                     danger: true,
                   ),
                 ],
@@ -231,6 +355,186 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Dialogs
+// ────────────────────────────────────────────────────────────────────────────
+
+class _ConfirmDialog extends StatelessWidget {
+  const _ConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
+          child: Text(confirmLabel),
+        ),
+      ],
+    );
+  }
+}
+
+/// Single-field prompt. Owns its controller so it is disposed only after the
+/// dialog's exit animation (see `_RenameDialog` in the sidebar).
+class _TextPromptDialog extends StatefulWidget {
+  const _TextPromptDialog({
+    required this.title,
+    required this.hint,
+    required this.confirmLabel,
+    this.message,
+    this.initial = '',
+    this.obscure = false,
+    this.danger = false,
+  });
+
+  final String title;
+  final String? message;
+  final String hint;
+  final String initial;
+  final bool obscure;
+  final String confirmLabel;
+  final bool danger;
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  late final TextEditingController _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_ctrl.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.message != null) ...[
+            Text(widget.message!, style: TextStyle(color: t.textSecondary, fontSize: 13)),
+            const SizedBox(height: NexusSpacing.md),
+          ],
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            obscureText: widget.obscure,
+            decoration: InputDecoration(hintText: widget.hint),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: widget.danger ? NexusColors.crimson : null,
+          ),
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChangePasswordDialog extends StatefulWidget {
+  const _ChangePasswordDialog();
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _confirm = TextEditingController();
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.of(context).pop((current: _current.text, next: _next.text));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change password'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _current,
+              autofocus: true,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: 'Current password'),
+              validator: (v) => (v ?? '').isEmpty ? 'Enter your current password' : null,
+            ),
+            const SizedBox(height: NexusSpacing.md),
+            TextFormField(
+              controller: _next,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: 'New password (min 8 chars)'),
+              validator: (v) =>
+                  (v ?? '').length < 8 ? 'Password must be at least 8 characters' : null,
+            ),
+            const SizedBox(height: NexusSpacing.md),
+            TextFormField(
+              controller: _confirm,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(hintText: 'Repeat new password'),
+              onFieldSubmitted: (_) => _submit(),
+              validator: (v) => v != _next.text ? 'Passwords don’t match' : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _submit,
+          style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
+          child: const Text('Change password'),
+        ),
+      ],
     );
   }
 }
@@ -309,7 +613,9 @@ class _SwitchTile extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: NexusColors.crimson,
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected) ? NexusColors.crimson : null,
+        ),
       ),
       onTap: () => onChanged(!value),
     );
@@ -531,7 +837,7 @@ class _ThemeRow extends StatelessWidget {
                     duration: const Duration(milliseconds: 160),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: selected ? NexusColors.crimson.withOpacity(0.12) : t.surfaceHigher,
+                      color: selected ? NexusColors.crimson.withValues(alpha: 0.12) : t.surfaceHigher,
                       borderRadius: const BorderRadius.all(NexusRadius.md),
                       border: Border.all(
                         color: selected ? NexusColors.crimson : Colors.transparent,

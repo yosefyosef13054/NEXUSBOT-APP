@@ -65,9 +65,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return Scaffold(
       backgroundColor: t.background,
       appBar: AppBar(
-        leading: context.isMobile
-            ? const MenuButton()
-            : null,
+        leading: context.isMobile ? const MenuButton() : null,
         title: Row(
           children: [
             const NexusLogo(size: 22),
@@ -118,9 +116,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (state.error != null)
             Container(
               width: double.infinity,
-              color: NexusColors.crimsonDark.withOpacity(0.18),
+              color: NexusColors.crimsonDark.withValues(alpha: 0.18),
               padding: const EdgeInsets.symmetric(
-                  horizontal: NexusSpacing.lg, vertical: NexusSpacing.sm),
+                horizontal: NexusSpacing.lg,
+                vertical: NexusSpacing.sm,
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.error_outline, size: 14, color: NexusColors.crimson),
@@ -140,6 +140,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Composer(
                 onSend: controller.send,
                 sending: state.sending,
+                stopping: state.stopping,
                 useRag: state.useRag,
                 useTools: state.useTools,
                 onToggleRag: controller.toggleRag,

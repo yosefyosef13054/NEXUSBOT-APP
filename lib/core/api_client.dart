@@ -1,58 +1,39 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/auth_models.dart';
+import 'api_exception.dart';
+import 'auth_session.dart';
 import 'env.dart';
 import 'secure_storage.dart';
+import 'sse_parser.dart';
 
-/// Typed wrapper around a Dio failure so the UI layer never imports `dio`.
-class ApiException implements Exception {
-  ApiException({required this.code, required this.message, this.details, this.statusCode});
-
-  factory ApiException.fromDio(DioException e) {
-    final body = e.response?.data;
-    if (body is Map && body['error'] is Map) {
-      final m = (body['error'] as Map).cast<String, dynamic>();
-      return ApiException(
-        code: (m['code'] ?? 'unknown') as String,
-        message: (m['message'] ?? 'Request failed') as String,
-        details: (m['details'] as Map?)?.cast<String, dynamic>(),
-        statusCode: e.response?.statusCode,
-      );
-    }
-    return ApiException(
-      code: 'network_error',
-      message: e.message ?? 'Network error',
-      statusCode: e.response?.statusCode,
-    );
-  }
-
-  final String code;
-  final String message;
-  final Map<String, dynamic>? details;
-  final int? statusCode;
-
-  bool get isAuth => code == 'unauthorized' || statusCode == 401;
-  bool get isRateLimited => code == 'rate_limited' || statusCode == 429;
-
-  @override
-  String toString() => 'ApiException($code: $message)';
-}
+export 'api_exception.dart';
 
 /// Authenticated API client.
 ///
 /// - Injects `Authorization: Bearer <jwt>` on every request from secure storage.
-/// - On 401, transparently refreshes the access token using the refresh token,
-///   retries the original request, and only fails if the refresh itself fails.
+/// - On 401, refreshes the access token through the single-flight
+///   [TokenRefresher] (concurrent 401s await the same refresh), retries the
+///   original request once, and only fails if the refresh itself fails.
+/// - Maps every non-2xx response and transport failure to [ApiException]
+///   (carrying the envelope's `request_id`), so screens never see `dio` types.
+/// - Opens SSE streams through the same Dio instance ([openEventStream]) so
+///   the auth interceptor applies to streaming too.
 class ApiClient {
-  ApiClient({required this.dio, required this.tokens});
+  ApiClient({required this.dio, required this.tokens, required this.refresher});
 
   final Dio dio;
   final TokenStorage tokens;
+  final TokenRefresher refresher;
 
-  static Future<ApiClient> create(TokenStorage tokens) async {
+  static ApiClient create(TokenStorage tokens, {String baseUrl = Env.apiBaseUrl}) {
     final dio = Dio(
       BaseOptions(
-        baseUrl: Env.apiBaseUrl,
+        baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 60),
         sendTimeout: const Duration(seconds: 30),
@@ -60,36 +41,211 @@ class ApiClient {
         validateStatus: (s) => s != null && s < 500,
       ),
     );
-    final client = ApiClient(dio: dio, tokens: tokens);
+    final refresher = TokenRefresher(
+      tokens: tokens,
+      refresh: (refreshToken) => _refreshCall(baseUrl, refreshToken),
+    );
+    final client = ApiClient(dio: dio, tokens: tokens, refresher: refresher);
     dio.interceptors.add(_AuthInterceptor(client));
     return client;
   }
 
-  /// Public wrapper that converts Dio exceptions to [ApiException].
+  /// `POST /auth/refresh` on a bare Dio — no interceptors, so a failing
+  /// refresh can never recurse into another refresh.
+  static Future<TokenPair> _refreshCall(String baseUrl, String refreshToken) async {
+    final bare = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
+    try {
+      final res = await bare.post<Map<String, dynamic>>(
+        '/auth/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+      return TokenPair.fromJson(res.data!);
+    } on DioException catch (e) {
+      throw e.toApiException();
+    }
+  }
+
+  /// Proactively refreshes the access token if it expires within a minute.
+  /// Call before opening a long-lived stream.
+  Future<String?> ensureFreshAccessToken() => refresher.ensureFreshAccessToken();
+
+  /// Performs a request and converts any failure — transport error or
+  /// non-2xx envelope — into [ApiException].
+  ///
+  /// [authRetry] disables the transparent 401-refresh-retry for endpoints
+  /// where a 401 means "wrong credentials" rather than "stale token"
+  /// (login, password confirmation, …).
   Future<Response<T>> request<T>(
     String path, {
     String method = 'GET',
     Object? data,
     Map<String, dynamic>? query,
     Options? options,
+    bool authRetry = true,
+    ProgressCallback? onSendProgress,
   }) async {
+    final base = options ?? Options();
+    final opts = base.copyWith(
+      method: method,
+      extra: {
+        ...?base.extra,
+        if (!authRetry) _AuthInterceptor.skipRefreshKey: true,
+      },
+    );
+    final Response<T> res;
     try {
-      return await dio.request<T>(
+      res = await dio.request<T>(
         path,
         data: data,
         queryParameters: query,
-        options: (options ?? Options()).copyWith(method: method),
+        options: opts,
+        onSendProgress: onSendProgress,
       );
     } on DioException catch (e) {
-      throw ApiException.fromDio(e);
+      throw e.toApiException();
     }
+    final status = res.statusCode ?? 0;
+    if (status < 200 || status >= 300) {
+      final requestId = res.headers.value('x-request-id');
+      throw ApiException.fromEnvelope(
+            res.data,
+            statusCode: status,
+            headerRequestId: requestId,
+          ) ??
+          ApiException(
+            code: 'http_$status',
+            message: 'Request failed ($status)',
+            statusCode: status,
+            requestId: requestId,
+          );
+    }
+    return res;
+  }
+
+  /// Opens a `text/event-stream` request through [dio] — so the auth
+  /// interceptor and token refresh apply — and returns the parsed frames.
+  ///
+  /// Cancelling the subscription on the returned stream closes the underlying
+  /// HTTP connection, so the server sees the disconnect. (Dio's response
+  /// stream only releases its socket when the request's [CancelToken] is
+  /// cancelled — a plain subscription cancel is swallowed by its internal
+  /// controller — so the stream owns a token and cancels it on `onCancel`.)
+  ///
+  /// Throws [ApiException] when the server answers with a non-2xx envelope;
+  /// transport failures mid-stream arrive as [ApiException] errors on the
+  /// stream.
+  Future<Stream<SseEvent>> openEventStream(
+    String path, {
+    String method = 'POST',
+    Object? data,
+    CancelToken? cancelToken,
+  }) async {
+    await ensureFreshAccessToken();
+    final token = cancelToken ?? CancelToken();
+    final Response<ResponseBody> res;
+    try {
+      res = await dio.request<ResponseBody>(
+        path,
+        data: data,
+        cancelToken: token,
+        options: Options(
+          method: method,
+          responseType: ResponseType.stream,
+          // Dio applies receiveTimeout *between chunks* on a stream; a slow
+          // tool call or a long think must not kill the turn.
+          receiveTimeout: streamIdleTimeout,
+          headers: const {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+        ),
+      );
+    } on DioException catch (e) {
+      final body = e.response?.data;
+      if (body is ResponseBody) {
+        throw await _exceptionFromStreamBody(body, e.response?.statusCode ?? 0);
+      }
+      throw e.toApiException();
+    }
+    final body = res.data;
+    final status = res.statusCode ?? 0;
+    if (body == null) {
+      throw ApiException(code: 'network_error', message: 'Empty response', statusCode: status);
+    }
+    if (status < 200 || status >= 300) {
+      throw await _exceptionFromStreamBody(body, status);
+    }
+
+    final frames = const SseTransformer().bind(utf8.decoder.bind(body.stream));
+    final out = StreamController<SseEvent>();
+    StreamSubscription<SseEvent>? inner;
+    out.onListen = () {
+      inner = frames.listen(
+        out.add,
+        onError: (Object e, StackTrace st) =>
+            out.addError(e is DioException ? e.toApiException() : e, st),
+        onDone: out.close,
+      );
+    };
+    out.onPause = () => inner?.pause();
+    out.onResume = () => inner?.resume();
+    out.onCancel = () async {
+      if (!token.isCancelled) token.cancel('closed by client');
+      await inner?.cancel();
+    };
+    return out.stream;
+  }
+
+  /// Longest gap between two SSE frames before the stream is considered dead.
+  static const streamIdleTimeout = Duration(minutes: 5);
+
+  /// Reads a (small) error body from a streaming response and maps it.
+  static Future<ApiException> _exceptionFromStreamBody(ResponseBody body, int status) async {
+    var text = '';
+    try {
+      text = await utf8.decodeStream(body.stream);
+    } catch (_) {
+      // Body unreadable; fall through to a status-only exception.
+    }
+    Object? json;
+    if (text.isNotEmpty) {
+      try {
+        json = jsonDecode(text);
+      } on FormatException {
+        json = null;
+      }
+    }
+    final requestId = body.headers['x-request-id']?.firstOrNull;
+    return ApiException.fromEnvelope(json, statusCode: status, headerRequestId: requestId) ??
+        ApiException(
+          code: 'http_$status',
+          message: text.isEmpty ? 'Request failed ($status)' : text,
+          statusCode: status,
+          requestId: requestId,
+        );
   }
 }
 
+/// Adds the bearer token to every request and recovers from 401s.
+///
+/// A 401 triggers one refresh through [TokenRefresher] (single-flight, so a
+/// burst of 401s from parallel requests shares a single refresh call) and one
+/// retry. If another request already rotated the tokens in the meantime, the
+/// retry simply reuses the new access token without refreshing again.
 class _AuthInterceptor extends Interceptor {
   _AuthInterceptor(this.client);
   final ApiClient client;
-  bool _refreshing = false;
+
+  /// `RequestOptions.extra` flag: never attempt a refresh-and-retry.
+  static const skipRefreshKey = 'nexusbot.skipAuthRefresh';
+  static const _retriedKey = 'nexusbot.authRetried';
 
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
@@ -104,11 +260,16 @@ class _AuthInterceptor extends Interceptor {
 
   @override
   Future<void> onResponse(Response response, ResponseInterceptorHandler handler) async {
-    // Treat 401 responses (returned without throwing because validateStatus < 500) as auth errors.
+    // 401s arrive here (not in onError) because validateStatus accepts < 500.
     if (response.statusCode == 401) {
-      final retried = await _tryRefreshAndRetry(response.requestOptions);
-      if (retried != null) {
-        return handler.resolve(retried);
+      try {
+        final retried = await _retryWithFreshToken(response.requestOptions);
+        if (retried != null) {
+          _discardBody(response);
+          return handler.resolve(retried);
+        }
+      } on DioException catch (e) {
+        return handler.reject(e);
       }
     }
     handler.next(response);
@@ -117,37 +278,73 @@ class _AuthInterceptor extends Interceptor {
   @override
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
     if (err.response?.statusCode == 401) {
-      final retried = await _tryRefreshAndRetry(err.requestOptions);
-      if (retried != null) {
-        return handler.resolve(retried);
+      try {
+        final retried = await _retryWithFreshToken(err.requestOptions);
+        if (retried != null) return handler.resolve(retried);
+      } on DioException catch (e) {
+        return handler.next(e);
       }
     }
     handler.next(err);
   }
 
-  Future<Response?> _tryRefreshAndRetry(RequestOptions original) async {
-    // Don't recurse on the refresh endpoint itself.
+  Future<Response<dynamic>?> _retryWithFreshToken(RequestOptions original) async {
+    if (original.extra[skipRefreshKey] == true) return null;
+    if (original.extra[_retriedKey] == true) return null;
     if (original.path.contains('/auth/refresh')) return null;
-    if (_refreshing) return null;
-    _refreshing = true;
-    try {
-      final refresh = await client.tokens.readRefresh();
-      if (refresh == null) return null;
-      final res = await Dio(BaseOptions(baseUrl: Env.apiBaseUrl)).post(
-        '/auth/refresh',
-        data: {'refresh_token': refresh},
-      );
-      final access = res.data['access_token'] as String;
-      final newRefresh = res.data['refresh_token'] as String;
-      await client.tokens.writeTokens(access: access, refresh: newRefresh);
-      original.headers['Authorization'] = 'Bearer $access';
-      return await client.dio.fetch(original);
-    } catch (_) {
-      await client.tokens.clear();
-      return null;
-    } finally {
-      _refreshing = false;
+    // A request that carried no token is not something a refresh can fix.
+    final used = original.headers['Authorization'] as String?;
+    if (used == null) return null;
+
+    final current = await client.tokens.readAccess();
+    final String? access;
+    if (current != null && 'Bearer $current' != used) {
+      // Someone already rotated the pair while this request was in flight.
+      access = current;
+    } else {
+      access = await client.refresher.refresh();
     }
+    if (access == null) return null;
+
+    original.headers['Authorization'] = 'Bearer $access';
+    original.extra[_retriedKey] = true;
+    return client.dio.fetch<dynamic>(original);
+  }
+
+  /// A superseded streaming 401 response still holds a socket; let it drain.
+  static void _discardBody(Response<dynamic> response) {
+    final data = response.data;
+    if (data is ResponseBody) {
+      unawaited(data.stream.drain<void>().then((_) {}, onError: (_) {}));
+    }
+  }
+}
+
+extension _DioExceptionX on DioException {
+  ApiException toApiException() {
+    final res = response;
+    final requestId = res?.headers.value('x-request-id');
+    final fromEnvelope = ApiException.fromEnvelope(
+      res?.data,
+      statusCode: res?.statusCode,
+      headerRequestId: requestId,
+    );
+    if (fromEnvelope != null) return fromEnvelope;
+    final code = switch (type) {
+      DioExceptionType.cancel => 'cancelled',
+      DioExceptionType.connectionTimeout ||
+      DioExceptionType.sendTimeout ||
+      DioExceptionType.receiveTimeout =>
+        'timeout',
+      DioExceptionType.badResponse => 'http_${res?.statusCode}',
+      _ => 'network_error',
+    };
+    return ApiException(
+      code: code,
+      message: message ?? 'Network error',
+      statusCode: res?.statusCode,
+      requestId: requestId,
+    );
   }
 }
 
