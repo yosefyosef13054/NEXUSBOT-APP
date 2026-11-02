@@ -19,6 +19,7 @@ class ChatSession {
     this.systemPrompt,
     this.summary,
     this.model,
+    this.meta = const {},
   });
 
   factory ChatSession.fromJson(Map<String, dynamic> j) => ChatSession(
@@ -27,6 +28,7 @@ class ChatSession {
         systemPrompt: j['system_prompt'] as String?,
         summary: j['summary'] as String?,
         model: j['model'] as String?,
+        meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
         createdAt: DateTime.parse(j['created_at'] as String),
         updatedAt: DateTime.parse(j['updated_at'] as String),
       );
@@ -35,11 +37,41 @@ class ChatSession {
   final String title;
   final String? systemPrompt;
   final String? summary;
+
+  /// The session's model id (`PATCH /sessions/{id} {model}`); null = the
+  /// user's / server's default.
   final String? model;
+
+  /// Free-form session metadata. `meta.collection_ids` is the knowledge
+  /// scope (see [collectionIds]).
+  final Map<String, dynamic> meta;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Collections this chat's RAG retrieval is restricted to; null = all of
+  /// the user's documents.
+  List<String>? get collectionIds {
+    final raw = meta['collection_ids'];
+    if (raw is! List) return null;
+    return raw.map((e) => e.toString()).toList();
+  }
+
+  ChatSession copyWith({String? title, String? model, Map<String, dynamic>? meta}) =>
+      ChatSession(
+        id: id,
+        title: title ?? this.title,
+        systemPrompt: systemPrompt,
+        summary: summary,
+        model: model ?? this.model,
+        meta: meta ?? this.meta,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
 }
 
+/// A retrieved chunk the answer was grounded in. Structured since Phase 2:
+/// [chunkId] opens the chunk viewer, [page] / [section] locate it in the
+/// source document. Optional fields are null when the server has no value.
 class Citation {
   const Citation({
     required this.documentId,
@@ -47,35 +79,205 @@ class Citation {
     required this.chunkIndex,
     required this.score,
     required this.excerpt,
+    this.chunkId,
+    this.page,
+    this.section,
+    this.startIndex,
+    this.endIndex,
+    this.collectionId,
+    this.match,
   });
 
   factory Citation.fromJson(Map<String, dynamic> j) => Citation(
         documentId: (j['document_id'] as String?) ?? '',
         documentName: (j['document_name'] as String?) ?? 'Document',
+        chunkId: j['chunk_id'] as String?,
         chunkIndex: (j['chunk_index'] as num?)?.toInt() ?? 0,
+        page: (j['page'] as num?)?.toInt(),
+        section: j['section'] as String?,
+        startIndex: (j['start_index'] as num?)?.toInt(),
+        endIndex: (j['end_index'] as num?)?.toInt(),
+        collectionId: j['collection_id'] as String?,
+        match: j['match'] as String?,
         score: (j['score'] as num?)?.toDouble() ?? 0,
         excerpt: (j['excerpt'] as String?) ?? '',
       );
 
   final String documentId;
   final String documentName;
+  final String? chunkId;
   final int chunkIndex;
+  final int? page;
+  final String? section;
+  final int? startIndex;
+  final int? endIndex;
+  final String? collectionId;
+
+  /// How the chunk was found: `vector`, `keyword` or `hybrid` (null when the
+  /// server does not say).
+  final String? match;
   final double score;
   final String excerpt;
+
+  /// `p. 4 · 2. Scope > 2.1 Goals` — null when neither page nor section is known.
+  String? get locationLabel {
+    final parts = <String>[
+      if (page != null) 'p. $page',
+      if (section != null && section!.trim().isNotEmpty) section!.trim(),
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// Whether the chunk viewer can fetch the full text.
+  bool get canOpen => documentId.isNotEmpty && chunkId != null && chunkId!.isNotEmpty;
 }
 
+enum ToolCallStatus {
+  ok,
+  error,
+  denied,
+  unknown;
+
+  static ToolCallStatus fromString(String? s) =>
+      ToolCallStatus.values.firstWhereOrNull((v) => v.name == s) ?? ToolCallStatus.unknown;
+}
+
+/// One tool run — from a live `tool_call` event, the final
+/// `assistant_message.tool_calls`, or a persisted `role: "tool"` history row.
+/// [callId] identifies the same run across all three sources.
 class ToolCall {
-  const ToolCall({required this.tool, this.input, this.output});
+  const ToolCall({
+    required this.tool,
+    this.callId,
+    this.input,
+    this.output,
+    this.status = ToolCallStatus.ok,
+    this.latencyMs,
+    this.error,
+  });
 
   factory ToolCall.fromJson(Map<String, dynamic> j) => ToolCall(
         tool: (j['tool'] as String?) ?? 'tool',
+        callId: j['call_id'] as String?,
         input: j['input'],
         output: j['output']?.toString(),
+        status: _statusOf(j),
+        latencyMs: (j['latency_ms'] as num?)?.toInt(),
+        error: j['error']?.toString(),
       );
 
+  static ToolCallStatus _statusOf(Map<String, dynamic> j) {
+    final s = j['status'];
+    if (s is String) return ToolCallStatus.fromString(s);
+    if (j['error'] != null || j['phase'] == 'error') return ToolCallStatus.error;
+    return ToolCallStatus.ok;
+  }
+
   final String tool;
+  final String? callId;
   final Object? input;
   final String? output;
+  final ToolCallStatus status;
+  final int? latencyMs;
+  final String? error;
+}
+
+/// Upserts [incoming] into [existing]: an entry with a known `call_id`
+/// replaces the one it matches (so a history reload and the live stream
+/// never show the same run twice); entries without an id are appended.
+List<ToolCall> mergeToolCalls(List<ToolCall> existing, Iterable<ToolCall> incoming) {
+  final out = List<ToolCall>.of(existing);
+  for (final tc in incoming) {
+    final id = tc.callId;
+    final i = id == null ? -1 : out.indexWhere((e) => e.callId == id);
+    if (i >= 0) {
+      out[i] = tc;
+    } else {
+      out.add(tc);
+    }
+  }
+  return out;
+}
+
+/// The user's answer to an [ApprovalRequest].
+enum ApprovalDecision {
+  approve,
+  deny;
+
+  /// Wire value for `{"decision": …}`.
+  String get wire => name;
+}
+
+/// One tool call the agent wants to run and needs permission for.
+class ApprovalToolCall {
+  const ApprovalToolCall({
+    required this.callId,
+    required this.tool,
+    this.input,
+    this.description = '',
+  });
+
+  factory ApprovalToolCall.fromJson(Map<String, dynamic> j) => ApprovalToolCall(
+        callId: (j['call_id'] as String?) ?? '',
+        tool: (j['tool'] as String?) ?? 'tool',
+        input: j['input'],
+        description: (j['description'] as String?) ?? '',
+      );
+
+  final String callId;
+  final String tool;
+  final Object? input;
+  final String description;
+}
+
+/// A human-in-the-loop request: the agent paused before running one or more
+/// approval-required tools. Carried by the `approval_required` event,
+/// `assistant_message.data.approval`, history `meta.approval`, and
+/// `GET /sessions/{id}/approvals?status=pending`.
+class ApprovalRequest {
+  const ApprovalRequest({
+    required this.approvalId,
+    required this.sessionId,
+    required this.messageId,
+    this.expiresAt,
+    this.toolCalls = const [],
+    this.status = 'pending',
+  });
+
+  factory ApprovalRequest.fromJson(Map<String, dynamic> j) => ApprovalRequest(
+        approvalId: (j['approval_id'] as String?) ?? '',
+        sessionId: (j['session_id'] as String?) ?? '',
+        messageId: (j['message_id'] as String?) ?? '',
+        expiresAt: DateTime.tryParse(j['expires_at'] as String? ?? ''),
+        toolCalls: (j['tool_calls'] as List? ?? const [])
+            .whereType<Map>()
+            .map((m) => ApprovalToolCall.fromJson(m.cast<String, dynamic>()))
+            .toList(),
+        status: (j['status'] as String?) ?? 'pending',
+      );
+
+  final String approvalId;
+  final String sessionId;
+
+  /// The placeholder assistant message this approval belongs to.
+  final String messageId;
+  final DateTime? expiresAt;
+  final List<ApprovalToolCall> toolCalls;
+
+  /// `pending` while the buttons should be shown; anything else (resolved,
+  /// expired — as reconciled against the pending list) hides them.
+  final String status;
+
+  bool get isPending => status == 'pending';
+
+  ApprovalRequest copyWith({String? status}) => ApprovalRequest(
+        approvalId: approvalId,
+        sessionId: sessionId,
+        messageId: messageId,
+        expiresAt: expiresAt,
+        toolCalls: toolCalls,
+        status: status ?? this.status,
+      );
 }
 
 List<Citation> _citationsFrom(Object? raw) => (raw as List? ?? const [])
@@ -83,10 +285,23 @@ List<Citation> _citationsFrom(Object? raw) => (raw as List? ?? const [])
     .map((m) => Citation.fromJson(m.cast<String, dynamic>()))
     .toList();
 
-List<ToolCall> _toolCallsFrom(Object? raw) => (raw as List? ?? const [])
-    .whereType<Map>()
-    .map((m) => ToolCall.fromJson(m.cast<String, dynamic>()))
-    .toList();
+List<ToolCall> _toolCallsFrom(Object? raw) => mergeToolCalls(
+      const [],
+      (raw as List? ?? const [])
+          .whereType<Map>()
+          .map((m) => ToolCall.fromJson(m.cast<String, dynamic>())),
+    );
+
+ApprovalRequest? _approvalFrom(Object? raw) =>
+    raw is Map ? ApprovalRequest.fromJson(raw.cast<String, dynamic>()) : null;
+
+/// `meta.status` of a persisted assistant message.
+abstract final class MessageStatus {
+  static const ok = 'ok';
+  static const interrupted = 'interrupted';
+  static const error = 'error';
+  static const awaitingApproval = 'awaiting_approval';
+}
 
 class ChatMessage {
   ChatMessage({
@@ -100,21 +315,44 @@ class ChatMessage {
     this.toolCalls = const [],
     this.streaming = false,
     this.interrupted = false,
+    this.status,
+    this.approval,
+    this.model,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) {
     final meta = (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final role = MessageRole.fromString(j['role'] as String);
+    final content = (j['content'] as String?) ?? '';
+    final status = meta['status'] as String?;
     return ChatMessage(
       id: j['id'] as String,
       sessionId: j['session_id'] as String,
-      role: MessageRole.fromString(j['role'] as String),
-      content: (j['content'] as String?) ?? '',
+      role: role,
+      content: content,
       tokens: (j['tokens'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.parse(j['created_at'] as String),
       citations: _citationsFrom(meta['citations']),
-      toolCalls: _toolCallsFrom(meta['tool_calls']),
+      // A `role: "tool"` row *is* one tool run: its meta carries the call,
+      // its content the (truncated) output.
+      toolCalls: role == MessageRole.tool
+          ? [
+              ToolCall(
+                tool: (meta['tool'] as String?) ?? 'tool',
+                callId: meta['call_id'] as String?,
+                input: meta['input'],
+                output: content,
+                status: ToolCallStatus.fromString(meta['status'] as String?),
+                latencyMs: (meta['latency_ms'] as num?)?.toInt(),
+                error: meta['error']?.toString(),
+              ),
+            ]
+          : _toolCallsFrom(meta['tool_calls']),
       // A generation stopped early is persisted with `meta.status == "interrupted"`.
-      interrupted: meta['status'] == 'interrupted',
+      interrupted: status == MessageStatus.interrupted,
+      status: status,
+      approval: _approvalFrom(meta['approval']),
+      model: meta['model'] as String?,
     );
   }
 
@@ -143,6 +381,20 @@ class ChatMessage {
   /// [content] holds the partial text.
   final bool interrupted;
 
+  /// `meta.status` (`ok`, `interrupted`, `error`, `awaiting_approval`).
+  final String? status;
+
+  /// Set while the agent waits for the user to approve a tool call.
+  final ApprovalRequest? approval;
+
+  /// The model id that produced this reply (`meta.model` / `done.data.model`).
+  final String? model;
+
+  /// A `role: "tool"` history row — rendered as a chip, never as a bubble.
+  bool get isToolRun => role == MessageRole.tool;
+
+  bool get awaitingApproval => status == MessageStatus.awaitingApproval;
+
   ChatMessage copyWith({
     String? id,
     String? content,
@@ -150,6 +402,11 @@ class ChatMessage {
     List<ToolCall>? toolCalls,
     bool? streaming,
     bool? interrupted,
+    String? status,
+    bool clearStatus = false,
+    ApprovalRequest? approval,
+    bool clearApproval = false,
+    String? model,
   }) =>
       ChatMessage(
         id: id ?? this.id,
@@ -162,7 +419,45 @@ class ChatMessage {
         toolCalls: toolCalls ?? this.toolCalls,
         streaming: streaming ?? this.streaming,
         interrupted: interrupted ?? this.interrupted,
+        status: clearStatus ? null : (status ?? this.status),
+        approval: clearApproval ? null : (approval ?? this.approval),
+        model: model ?? this.model,
       );
+}
+
+/// One hit of `POST /search`. [highlight] wraps matched terms in
+/// `<mark>…</mark>` (see `shared/highlight_text.dart`).
+class SearchResult {
+  const SearchResult({
+    required this.sessionId,
+    required this.sessionTitle,
+    required this.messageId,
+    required this.role,
+    required this.snippet,
+    this.highlight,
+    this.rank,
+    this.createdAt,
+  });
+
+  factory SearchResult.fromJson(Map<String, dynamic> j) => SearchResult(
+        sessionId: (j['session_id'] as String?) ?? '',
+        sessionTitle: (j['session_title'] as String?) ?? 'Untitled',
+        messageId: (j['message_id'] as String?) ?? '',
+        role: MessageRole.fromString((j['role'] as String?) ?? 'assistant'),
+        snippet: (j['snippet'] as String?) ?? '',
+        highlight: j['highlight'] as String?,
+        rank: (j['rank'] as num?)?.toDouble(),
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? ''),
+      );
+
+  final String sessionId;
+  final String sessionTitle;
+  final String messageId;
+  final MessageRole role;
+  final String snippet;
+  final String? highlight;
+  final double? rank;
+  final DateTime? createdAt;
 }
 
 /// Discriminated streaming event, identical over SSE and WebSocket.
@@ -184,6 +479,8 @@ sealed class StreamEvent {
         return TokenEvent(token: data is String ? data : '${data ?? ''}');
       case 'tool_call':
         return ToolCallEvent(data: _asMap(data));
+      case 'approval_required':
+        return ApprovalRequiredEvent(data: _asMap(data));
       case 'usage':
         return UsageEvent(data: _asMap(data));
       case 'done':
@@ -237,13 +534,31 @@ class ToolCallEvent extends StreamEvent {
   const ToolCallEvent({required this.data});
   final Map<String, dynamic> data;
 
-  /// `start` / `end` (absent for single-frame tool calls).
+  /// `start` / `end` / `error` (absent for single-frame tool calls).
   String? get phase => data['phase'] as String?;
   String get tool => (data['tool'] as String?) ?? 'tool';
+  String? get callId => data['call_id'] as String?;
   Object? get input => data['input'];
   String? get output => data['output']?.toString();
+  String? get error => data['error']?.toString();
+  int? get latencyMs => (data['latency_ms'] as num?)?.toInt();
 
-  ToolCall toToolCall() => ToolCall(tool: tool, input: input, output: output);
+  /// Whether this frame carries the run's result (only `end` / `error`, or a
+  /// single frame without a phase, do — `start` frames are lifecycle only).
+  bool get isTerminal => phase == null || phase == 'end' || phase == 'error';
+
+  ToolCall toToolCall() => ToolCall.fromJson(data);
+}
+
+/// The agent paused before running approval-required tools. The stream then
+/// ends normally with `done` + `assistant_message` (both
+/// `status: "awaiting_approval"`); resolve it through
+/// `ChatRepository.resolveApproval`.
+class ApprovalRequiredEvent extends StreamEvent {
+  const ApprovalRequiredEvent({required this.data});
+  final Map<String, dynamic> data;
+
+  ApprovalRequest get approval => ApprovalRequest.fromJson(data);
 }
 
 /// Provider-reported token counts for the turn.
@@ -257,7 +572,8 @@ class UsageEvent extends StreamEvent {
 }
 
 /// Full assembled text + latency. `interrupted` is set when the generation
-/// was stopped early (then `text` is the partial output).
+/// was stopped early (then `text` is the partial output); `status` is
+/// `awaiting_approval` when the turn paused for an approval.
 class DoneEvent extends StreamEvent {
   const DoneEvent({required this.data});
   final Map<String, dynamic> data;
@@ -265,6 +581,11 @@ class DoneEvent extends StreamEvent {
   String? get text => data['text'] as String?;
   int? get latencyMs => (data['latency_ms'] as num?)?.toInt();
   bool get interrupted => data['interrupted'] == true;
+  String? get status => data['status'] as String?;
+  bool get awaitingApproval => status == MessageStatus.awaitingApproval;
+
+  /// The model id actually used for the turn.
+  String? get model => data['model'] as String?;
 }
 
 /// The persisted assistant message — the canonical end of a turn.
@@ -275,8 +596,15 @@ class AssistantMessageEvent extends StreamEvent {
   String? get id => data['id'] as String?;
   bool get interrupted => data['interrupted'] == true;
 
+  Map<String, dynamic> get _meta => (data['meta'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+  String? get status => (data['status'] as String?) ?? _meta['status'] as String?;
+  bool get awaitingApproval => status == MessageStatus.awaitingApproval;
+  ApprovalRequest? get approval => _approvalFrom(data['approval'] ?? _meta['approval']);
+  String? get model => (data['model'] as String?) ?? _meta['model'] as String?;
+
   ChatMessage toMessage(String sessionId) {
-    final meta = (data['meta'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final meta = _meta;
     return ChatMessage(
       id: id ?? 'assistant-${DateTime.now().microsecondsSinceEpoch}',
       sessionId: (data['session_id'] as String?) ?? sessionId,
@@ -286,7 +614,10 @@ class AssistantMessageEvent extends StreamEvent {
       createdAt: DateTime.tryParse(data['created_at'] as String? ?? '') ?? DateTime.now(),
       citations: _citationsFrom(data['citations'] ?? meta['citations']),
       toolCalls: _toolCallsFrom(data['tool_calls'] ?? meta['tool_calls']),
-      interrupted: interrupted || meta['status'] == 'interrupted',
+      interrupted: interrupted || status == MessageStatus.interrupted,
+      status: status ?? (interrupted ? MessageStatus.interrupted : null),
+      approval: approval,
+      model: model,
     );
   }
 }
@@ -299,6 +630,10 @@ class ErrorEvent extends StreamEvent {
   final String? code;
 
   bool get isBusy => code == 'busy';
+
+  /// `conflict` / `not_found` — an approval that was already resolved or
+  /// expired (WebSocket transport reports these as error frames).
+  bool get isStaleApproval => code == 'conflict' || code == 'not_found';
 }
 
 class UnknownEvent extends StreamEvent {

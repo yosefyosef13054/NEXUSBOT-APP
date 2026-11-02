@@ -4,6 +4,7 @@ class User {
     required this.email,
     required this.role,
     this.fullName,
+    this.defaultModel,
   });
 
   factory User.fromJson(Map<String, dynamic> json) => User(
@@ -11,12 +12,17 @@ class User {
         email: json['email'] as String,
         fullName: json['full_name'] as String?,
         role: json['role'] as String? ?? 'user',
+        defaultModel: json['default_model'] as String?,
       );
 
   final String id;
   final String email;
   final String? fullName;
   final String role;
+
+  /// The account-wide default model (`PATCH /auth/me {default_model}`);
+  /// null = the server default.
+  final String? defaultModel;
 }
 
 class TokenPair {

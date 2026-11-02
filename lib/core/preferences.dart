@@ -113,8 +113,37 @@ class PrefsController extends StateNotifier<AppPrefs> {
   }
 }
 
+/// Per-chat preferences that live on this device only (keyed by session id).
+///
+/// Currently the tool selection made in the chat's tool picker. Reads go
+/// through the same SharedPreferences instance as [AppPrefs].
+class SessionPrefs {
+  SessionPrefs(this._prefs);
+  final SharedPreferences _prefs;
+
+  static String _toolsKey(String sessionId) => 'pref.session.$sessionId.toolNames';
+
+  /// The tools picked for [sessionId], or null when the user never changed
+  /// the default selection.
+  List<String>? toolNames(String sessionId) => _prefs.getStringList(_toolsKey(sessionId));
+
+  /// Persists the picker's selection; null restores the default.
+  Future<void> setToolNames(String sessionId, List<String>? names) async {
+    if (names == null) {
+      await _prefs.remove(_toolsKey(sessionId));
+    } else {
+      await _prefs.setStringList(_toolsKey(sessionId), names);
+    }
+  }
+}
+
 final sharedPreferencesProvider = FutureProvider<SharedPreferences>((_) {
   return SharedPreferences.getInstance();
+});
+
+final sessionPrefsProvider = Provider<SessionPrefs>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider).valueOrNull;
+  return SessionPrefs(prefs ?? _DummyPrefs());
 });
 
 final prefsProvider = StateNotifierProvider<PrefsController, AppPrefs>((ref) {

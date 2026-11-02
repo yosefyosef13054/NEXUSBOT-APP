@@ -12,12 +12,8 @@ import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../auth/auth_repository.dart';
 import '../chat/chat_repository.dart';
-
-const _availableModels = [
-  ('gpt-4o-mini', 'GPT-4o mini', 'Fast · cheap · default'),
-  ('gpt-4o', 'GPT-4o', 'High quality · slower'),
-  ('gpt-4-turbo', 'GPT-4 Turbo', 'Reasoning · long context'),
-];
+import '../models/model_info.dart';
+import '../models/models_repository.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -25,6 +21,35 @@ class SettingsScreen extends ConsumerWidget {
   void _toast(BuildContext context, String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ── Model ────────────────────────────────────────────────────────────
+
+  /// Sets the default model: locally (so new chats send it right away) and
+  /// on the account (`PATCH /auth/me {default_model}`) so every device agrees.
+  Future<void> _selectModel(BuildContext context, WidgetRef ref, String modelId) async {
+    final prefsCtrl = ref.read(prefsProvider.notifier);
+    final previous = ref.read(prefsProvider).model;
+    await prefsCtrl.setModel(modelId);
+    try {
+      final repo = await ref.read(authRepositoryProvider.future);
+      await repo.setDefaultModel(modelId);
+      ref.invalidate(currentUserProvider);
+    } catch (e) {
+      // The account default still wins the resolution — put the local
+      // preference back so the list reflects what the server will use.
+      await prefsCtrl.setModel(previous);
+      if (context.mounted) _toast(context, 'Could not save the default model: ${errorText(e)}');
+    }
+  }
+
+  Future<void> _refreshModels(WidgetRef ref) async {
+    ref.invalidate(modelCatalogProvider);
+    try {
+      await ref.read(modelCatalogProvider.future);
+    } catch (_) {
+      // The section shows the error with a retry button.
+    }
   }
 
   // ── Account actions ──────────────────────────────────────────────────
@@ -151,6 +176,8 @@ class SettingsScreen extends ConsumerWidget {
     final prefs = ref.watch(prefsProvider);
     final prefsCtrl = ref.read(prefsProvider.notifier);
     final displayName = user.value?.fullName;
+    final catalog = ref.watch(modelCatalogProvider);
+    final defaultModelId = ref.watch(defaultModelIdProvider);
 
     return Scaffold(
       backgroundColor: t.background,
@@ -158,200 +185,244 @@ class SettingsScreen extends ConsumerWidget {
         leading: context.isMobile ? const MenuButton() : null,
         title: Text('Settings', style: TextStyle(color: t.textPrimary)),
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: ListView(
-            padding: const EdgeInsets.all(NexusSpacing.lg),
-            children: [
-              // ── Profile card ───────────────────────────────────────────
-              Container(
-                padding: const EdgeInsets.all(NexusSpacing.lg),
-                decoration: BoxDecoration(
-                  color: t.surfaceHigh,
-                  borderRadius: const BorderRadius.all(NexusRadius.lg),
-                  border: Border.all(color: t.border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: const BoxDecoration(
-                        gradient: NexusColors.redGradient,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        user.value?.email.substring(0, 1).toUpperCase() ?? '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
+      body: RefreshIndicator(
+        color: NexusColors.crimson,
+        backgroundColor: t.surfaceHigh,
+        onRefresh: () => _refreshModels(ref),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(NexusSpacing.lg),
+              children: [
+                // ── Profile card ───────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(NexusSpacing.lg),
+                  decoration: BoxDecoration(
+                    color: t.surfaceHigh,
+                    borderRadius: const BorderRadius.all(NexusRadius.lg),
+                    border: Border.all(color: t.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: const BoxDecoration(
+                          gradient: NexusColors.redGradient,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          user.value?.email.substring(0, 1).toUpperCase() ?? '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: NexusSpacing.lg),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName?.isNotEmpty == true ? displayName! : 'Signed in',
-                            style: TextStyle(
-                              color: t.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                      const SizedBox(width: NexusSpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayName?.isNotEmpty == true ? displayName! : 'Signed in',
+                              style: TextStyle(
+                                color: t.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            user.value?.email ?? '—',
-                            style: TextStyle(color: t.textMuted, fontSize: 13),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              user.value?.email ?? '—',
+                              style: TextStyle(color: t.textMuted, fontSize: 13),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: NexusSpacing.xl),
-              _Section(
-                label: 'APPEARANCE',
-                children: [
-                  _ThemeRow(value: prefs.themeMode, onChanged: prefsCtrl.setThemeMode),
-                ],
-              ),
-
-              const SizedBox(height: NexusSpacing.xl),
-              _Section(
-                label: 'CHAT',
-                children: [
-                  _SwitchTile(
-                    icon: Icons.stream_rounded,
-                    title: 'Stream responses',
-                    subtitle: 'Token-by-token delivery. Off = wait for full reply.',
-                    value: prefs.streamingEnabled,
-                    onChanged: prefsCtrl.setStreaming,
-                  ),
-                  const _Divider(),
-                  _SwitchTile(
-                    icon: Icons.menu_book_rounded,
-                    title: 'Use RAG by default',
-                    subtitle: 'Ground replies in your uploaded documents.',
-                    value: prefs.ragByDefault,
-                    onChanged: prefsCtrl.setRag,
-                  ),
-                  const _Divider(),
-                  _SwitchTile(
-                    icon: Icons.build_rounded,
-                    title: 'Use tools by default',
-                    subtitle: 'Let the agent call tools (calculator, search, …) in new chats.',
-                    value: prefs.toolsByDefault,
-                    onChanged: prefsCtrl.setTools,
-                  ),
-                  const _Divider(),
-                  _ChoiceTile<StreamTransport>(
-                    icon: Icons.swap_horiz_rounded,
-                    title: 'Stream transport',
-                    value: prefs.transport,
-                    onChanged: prefsCtrl.setTransport,
-                    options: const [
-                      ('Server-Sent Events', StreamTransport.sse),
-                      ('WebSocket', StreamTransport.websocket),
                     ],
                   ),
-                ],
-              ),
-
-              const SizedBox(height: NexusSpacing.xl),
-              _Section(
-                label: 'MODEL',
-                children: [
-                  for (final m in _availableModels) ...[
-                    _ModelTile(
-                      id: m.$1,
-                      name: m.$2,
-                      description: m.$3,
-                      selected: prefs.model == m.$1,
-                      onTap: () => prefsCtrl.setModel(m.$1),
-                    ),
-                    if (m != _availableModels.last) const _Divider(),
-                  ],
-                ],
-              ),
-
-              const SizedBox(height: NexusSpacing.xl),
-              const _Section(
-                label: 'CONNECTION',
-                children: [
-                  _InfoRow(icon: Icons.cloud_outlined, label: 'API base URL', value: Env.apiBaseUrl),
-                ],
-              ),
-
-              const SizedBox(height: NexusSpacing.xl),
-              _Section(
-                label: 'ACCOUNT',
-                children: [
-                  _ActionTile(
-                    icon: Icons.person_outline_rounded,
-                    title: 'Display name',
-                    subtitle: displayName?.isNotEmpty == true ? displayName! : 'Not set',
-                    onTap: () => _editDisplayName(context, ref, displayName),
-                  ),
-                  const _Divider(),
-                  _ActionTile(
-                    icon: Icons.password_rounded,
-                    title: 'Change password',
-                    subtitle: 'Signs out every other device.',
-                    onTap: () => _changePassword(context, ref),
-                  ),
-                  const _Divider(),
-                  _ActionTile(
-                    icon: Icons.delete_sweep_rounded,
-                    title: 'Clear all chats',
-                    subtitle: 'Remove every chat session.',
-                    onTap: () => _clearAllChats(context, ref),
-                    danger: true,
-                  ),
-                  const _Divider(),
-                  _ActionTile(
-                    icon: Icons.logout_rounded,
-                    title: 'Sign out',
-                    subtitle: user.value?.email ?? '',
-                    onTap: () => _logout(context, ref),
-                    danger: true,
-                  ),
-                  const _Divider(),
-                  _ActionTile(
-                    icon: Icons.devices_other_rounded,
-                    title: 'Sign out everywhere',
-                    subtitle: 'Revoke every signed-in device.',
-                    onTap: () => _logoutEverywhere(context, ref),
-                    danger: true,
-                  ),
-                  const _Divider(),
-                  _ActionTile(
-                    icon: Icons.delete_forever_rounded,
-                    title: 'Delete account',
-                    subtitle: 'Permanently remove your account and data.',
-                    onTap: () => _deleteAccount(context, ref),
-                    danger: true,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: NexusSpacing.xxxl),
-              Center(
-                child: Text(
-                  'NexusBot v1.0.0 · FastAPI · LangChain · Flutter',
-                  style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
-              ),
-              const SizedBox(height: NexusSpacing.xxxl),
-            ],
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: 'APPEARANCE',
+                  children: [
+                    _ThemeRow(value: prefs.themeMode, onChanged: prefsCtrl.setThemeMode),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: 'CHAT',
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.stream_rounded,
+                      title: 'Stream responses',
+                      subtitle: 'Token-by-token delivery. Off = wait for full reply.',
+                      value: prefs.streamingEnabled,
+                      onChanged: prefsCtrl.setStreaming,
+                    ),
+                    const _Divider(),
+                    _SwitchTile(
+                      icon: Icons.menu_book_rounded,
+                      title: 'Use RAG by default',
+                      subtitle: 'Ground replies in your uploaded documents.',
+                      value: prefs.ragByDefault,
+                      onChanged: prefsCtrl.setRag,
+                    ),
+                    const _Divider(),
+                    _SwitchTile(
+                      icon: Icons.build_rounded,
+                      title: 'Use tools by default',
+                      subtitle: 'Let the agent call tools (calculator, search, …) in new chats.',
+                      value: prefs.toolsByDefault,
+                      onChanged: prefsCtrl.setTools,
+                    ),
+                    const _Divider(),
+                    _ChoiceTile<StreamTransport>(
+                      icon: Icons.swap_horiz_rounded,
+                      title: 'Stream transport',
+                      value: prefs.transport,
+                      onChanged: prefsCtrl.setTransport,
+                      options: const [
+                        ('Server-Sent Events', StreamTransport.sse),
+                        ('WebSocket', StreamTransport.websocket),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: 'MODEL',
+                  children: [
+                    catalog.when(
+                      loading: () => const _ModelsPlaceholder(
+                        icon: Icons.hourglass_empty_rounded,
+                        text: 'Loading models from the server…',
+                      ),
+                      error: (e, _) => _ModelsPlaceholder(
+                        icon: Icons.cloud_off_rounded,
+                        text: 'Could not load models: ${errorText(e)}',
+                        action: TextButton(
+                          onPressed: () => _refreshModels(ref),
+                          child: const Text('Retry'),
+                        ),
+                      ),
+                      data: (c) {
+                        if (c.isEmpty) {
+                          return const _ModelsPlaceholder(
+                            icon: Icons.memory_rounded,
+                            text: 'No model providers are configured on this server.',
+                          );
+                        }
+                        return Column(
+                          children: [
+                            for (final m in c.items) ...[
+                              _ModelTile(
+                                model: m,
+                                selected: m.id == defaultModelId,
+                                onTap: () => _selectModel(context, ref, m.id),
+                              ),
+                              if (m != c.items.last) const _Divider(),
+                            ],
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                NexusSpacing.lg,
+                                NexusSpacing.sm,
+                                NexusSpacing.lg,
+                                NexusSpacing.md,
+                              ),
+                              child: Text(
+                                'Used for new chats. Each chat can switch models from its '
+                                'header, and the composer can override it per message. '
+                                'Pull to refresh the list.',
+                                style: TextStyle(color: t.textMuted, fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                const _Section(
+                  label: 'CONNECTION',
+                  children: [
+                    _InfoRow(icon: Icons.cloud_outlined, label: 'API base URL', value: Env.apiBaseUrl),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: 'ACCOUNT',
+                  children: [
+                    _ActionTile(
+                      icon: Icons.person_outline_rounded,
+                      title: 'Display name',
+                      subtitle: displayName?.isNotEmpty == true ? displayName! : 'Not set',
+                      onTap: () => _editDisplayName(context, ref, displayName),
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.password_rounded,
+                      title: 'Change password',
+                      subtitle: 'Signs out every other device.',
+                      onTap: () => _changePassword(context, ref),
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.delete_sweep_rounded,
+                      title: 'Clear all chats',
+                      subtitle: 'Remove every chat session.',
+                      onTap: () => _clearAllChats(context, ref),
+                      danger: true,
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.logout_rounded,
+                      title: 'Sign out',
+                      subtitle: user.value?.email ?? '',
+                      onTap: () => _logout(context, ref),
+                      danger: true,
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.devices_other_rounded,
+                      title: 'Sign out everywhere',
+                      subtitle: 'Revoke every signed-in device.',
+                      onTap: () => _logoutEverywhere(context, ref),
+                      danger: true,
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.delete_forever_rounded,
+                      title: 'Delete account',
+                      subtitle: 'Permanently remove your account and data.',
+                      onTap: () => _deleteAccount(context, ref),
+                      danger: true,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xxxl),
+                Center(
+                  child: Text(
+                    'NexusBot v1.0.0 · FastAPI · LangChain · Flutter',
+                    style: TextStyle(color: t.textMuted, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: NexusSpacing.xxxl),
+              ],
+            ),
           ),
         ),
       ),
@@ -658,22 +729,25 @@ class _ChoiceTile<T> extends StatelessWidget {
 
 class _ModelTile extends StatelessWidget {
   const _ModelTile({
-    required this.id,
-    required this.name,
-    required this.description,
+    required this.model,
     required this.selected,
     required this.onTap,
   });
 
-  final String id;
-  final String name;
-  final String description;
+  final ModelInfo model;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final hints = <String>[
+      if (model.contextLabel != null) model.contextLabel!,
+      if (model.priceLabel != null) model.priceLabel!,
+      if (!model.supportsTools) 'no tools',
+      if (model.supportsVision) 'vision',
+      ...model.tags,
+    ];
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -710,36 +784,109 @@ class _ModelTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        color: t.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            model.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: t.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: NexusSpacing.sm),
+                        _ProviderBadge(provider: model.provider),
+                      ],
                     ),
-                    Text(description, style: TextStyle(color: t.textMuted, fontSize: 12)),
+                    if (hints.isNotEmpty)
+                      Text(
+                        hints.join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: t.textMuted, fontSize: 12),
+                      ),
                   ],
                 ),
               ),
+              const SizedBox(width: NexusSpacing.sm),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: t.surfaceHigher,
                   borderRadius: const BorderRadius.all(NexusRadius.pill),
                 ),
-                child: Text(
-                  id,
-                  style: TextStyle(
-                    color: t.textMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(
+                    model.id,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: t.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// `OPENAI` / `ANTHROPIC` / … pill next to a model name.
+class _ProviderBadge extends StatelessWidget {
+  const _ProviderBadge({required this.provider});
+  final String provider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: NexusColors.crimson.withValues(alpha: 0.12),
+        borderRadius: const BorderRadius.all(NexusRadius.pill),
+        border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        provider.toUpperCase(),
+        style: const TextStyle(
+          color: NexusColors.crimson,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1,
+        ),
+      ),
+    );
+  }
+}
+
+/// Loading / error / empty row for the MODEL section.
+class _ModelsPlaceholder extends StatelessWidget {
+  const _ModelsPlaceholder({required this.icon, required this.text, this.action});
+  final IconData icon;
+  final String text;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: 14),
+      child: Row(
+        children: [
+          Icon(icon, color: NexusColors.crimson, size: 20),
+          const SizedBox(width: NexusSpacing.md),
+          Expanded(child: Text(text, style: TextStyle(color: t.textSecondary, fontSize: 13))),
+          if (action != null) action!,
+        ],
       ),
     );
   }

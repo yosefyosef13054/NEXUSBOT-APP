@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../core/theme.dart';
+import 'approval_card.dart';
 import 'chat_models.dart';
 import 'code_block.dart';
+import 'tool_chips.dart';
 
 // ============================================================================
 // MessageBubble — wraps the bubble with tool chips above, citations below,
@@ -20,11 +22,25 @@ class MessageBubble extends StatefulWidget {
     required this.message,
     required this.onRegenerate,
     required this.isLastAssistant,
+    this.hiddenToolCallIds = const {},
+    this.onApprovalDecision,
+    this.approvalBusy = false,
+    this.onCitationTap,
   });
 
   final ChatMessage message;
   final VoidCallback? onRegenerate;
   final bool isLastAssistant;
+
+  /// `call_id`s already rendered as standalone tool rows just above this
+  /// bubble (history `role: "tool"` messages) — skipped in the strip so a
+  /// run is never shown twice.
+  final Set<String> hiddenToolCallIds;
+
+  /// Approve / Deny on the bubble's approval card; null disables the buttons.
+  final ValueChanged<ApprovalDecision>? onApprovalDecision;
+  final bool approvalBusy;
+  final ValueChanged<Citation>? onCitationTap;
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -47,7 +63,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final crossAxis = _isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final toolCalls = [
+      for (final tc in message.toolCalls)
+        if (tc.callId == null || !widget.hiddenToolCallIds.contains(tc.callId)) tc,
+    ];
+    final approval = message.approval;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _showActions = true),
@@ -60,26 +82,41 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: Column(
             crossAxisAlignment: crossAxis,
             children: [
-              if (widget.message.toolCalls.isNotEmpty) ...[
-                _ToolCallStrip(toolCalls: widget.message.toolCalls),
+              if (toolCalls.isNotEmpty) ...[
+                ToolCallChips(calls: toolCalls),
                 const SizedBox(height: NexusSpacing.xs),
               ],
               _BubbleContainer(
                 isUser: _isUser,
-                child: _BubbleContent(message: widget.message),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (approval == null || message.content.isNotEmpty)
+                      _BubbleContent(message: message),
+                    if (approval != null) ...[
+                      if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.md),
+                      ApprovalCard(
+                        approval: approval,
+                        busy: widget.approvalBusy,
+                        onDecision: widget.onApprovalDecision,
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              if (widget.message.interrupted && !widget.message.streaming) ...[
+              if (message.interrupted && !message.streaming) ...[
                 const SizedBox(height: NexusSpacing.xs),
                 const _StoppedMarker(),
               ],
-              if (widget.message.citations.isNotEmpty) ...[
+              if (message.citations.isNotEmpty) ...[
                 const SizedBox(height: NexusSpacing.sm),
-                CitationsStrip(citations: widget.message.citations),
+                CitationsStrip(citations: message.citations, onTap: widget.onCitationTap),
               ],
               AnimatedCrossFade(
                 duration: const Duration(milliseconds: 150),
                 crossFadeState:
-                    (_showActions || widget.isLastAssistant) && !widget.message.streaming
+                    (_showActions || widget.isLastAssistant) && !message.streaming
                         ? CrossFadeState.showSecond
                         : CrossFadeState.showFirst,
                 firstChild: const SizedBox(height: 4),
@@ -87,7 +124,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                   padding: const EdgeInsets.only(top: 6),
                   child: _MessageActionsRow(
                     isUser: _isUser,
-                    timestamp: widget.message.createdAt,
+                    timestamp: message.createdAt,
+                    model: _isUser ? null : message.model,
                     copied: _copied,
                     onCopy: _copy,
                     onRegenerate: !_isUser && widget.isLastAssistant ? widget.onRegenerate : null,
@@ -109,6 +147,7 @@ class _MessageActionsRow extends StatelessWidget {
     required this.copied,
     required this.onCopy,
     required this.onRegenerate,
+    this.model,
   });
 
   final bool isUser;
@@ -116,6 +155,9 @@ class _MessageActionsRow extends StatelessWidget {
   final bool copied;
   final VoidCallback onCopy;
   final VoidCallback? onRegenerate;
+
+  /// The model that produced the reply — shown as a muted caption.
+  final String? model;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +169,20 @@ class _MessageActionsRow extends StatelessWidget {
           DateFormat.jm().format(timestamp.toLocal()),
           style: TextStyle(color: t.textMuted, fontSize: 11),
         ),
+        if (model != null && model!.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Tooltip(
+              message: 'Model: $model',
+              child: Text(
+                '· $model',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: t.textMuted, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(width: 8),
         _ActionIcon(
           icon: copied ? Icons.check_rounded : Icons.copy_rounded,
@@ -280,6 +336,10 @@ class _BubbleContent extends StatelessWidget {
       );
     }
 
+    if (message.content.isEmpty && message.approval != null) {
+      return const SizedBox.shrink();
+    }
+
     return MarkdownBody(
       data: message.content.isEmpty ? '…' : message.content,
       selectable: true,
@@ -379,116 +439,93 @@ class _TypingDotsState extends State<TypingDots> with SingleTickerProviderStateM
 }
 
 // ============================================================================
-// Tool call strip
-// ============================================================================
-
-class _ToolCallStrip extends StatelessWidget {
-  const _ToolCallStrip({required this.toolCalls});
-  final List<ToolCall> toolCalls;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Wrap(
-      spacing: NexusSpacing.xs,
-      runSpacing: NexusSpacing.xs,
-      children: [
-        for (final tc in toolCalls)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: t.surfaceHigh,
-              borderRadius: const BorderRadius.all(NexusRadius.pill),
-              border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.5)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.build_rounded, size: 12, color: NexusColors.crimson),
-                const SizedBox(width: 4),
-                Text(
-                  tc.tool,
-                  style: TextStyle(
-                    color: t.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ============================================================================
 // Citations strip
 // ============================================================================
 
 class CitationsStrip extends StatelessWidget {
-  const CitationsStrip({super.key, required this.citations});
+  const CitationsStrip({super.key, required this.citations, this.onTap});
   final List<Citation> citations;
+  final ValueChanged<Citation>? onTap;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     return SizedBox(
-      height: 92,
+      height: 96,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: citations.length,
         separatorBuilder: (_, __) => const SizedBox(width: NexusSpacing.sm),
         itemBuilder: (_, i) {
           final c = citations[i];
-          return Container(
-            width: 240,
-            padding: const EdgeInsets.all(NexusSpacing.md),
-            decoration: BoxDecoration(
-              color: t.surfaceHigh,
+          final location = c.locationLabel;
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap == null ? null : () => onTap!(c),
               borderRadius: const BorderRadius.all(NexusRadius.md),
-              border: Border.all(color: t.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              child: Container(
+                width: 240,
+                padding: const EdgeInsets.all(NexusSpacing.md),
+                decoration: BoxDecoration(
+                  color: t.surfaceHigh,
+                  borderRadius: const BorderRadius.all(NexusRadius.md),
+                  border: Border.all(color: t.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.description_outlined, size: 14, color: NexusColors.crimson),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        c.documentName,
+                    Row(
+                      children: [
+                        const Icon(Icons.description_outlined, size: 14, color: NexusColors.crimson),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            c.documentName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: t.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${(c.score * 100).toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                            color: NexusColors.crimson,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (location != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        location,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: t.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          color: t.textMuted,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                    Text(
-                      '${(c.score * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                        color: NexusColors.crimson,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                    ],
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Text(
+                        c.excerpt,
+                        maxLines: location == null ? 3 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: t.textSecondary, fontSize: 11, height: 1.4),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: Text(
-                    c.excerpt,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: t.textSecondary, fontSize: 11, height: 1.4),
-                  ),
-                ),
-              ],
+              ),
             ),
           );
         },
@@ -512,6 +549,11 @@ class Composer extends StatefulWidget {
     required this.onToggleTools,
     required this.onStop,
     this.stopping = false,
+    this.toolsSummary,
+    this.onPickTools,
+    this.knowledgeLabel,
+    this.onPickKnowledge,
+    this.modelChip,
   });
 
   final void Function(String) onSend;
@@ -524,6 +566,21 @@ class Composer extends StatefulWidget {
   final ValueChanged<bool> onToggleRag;
   final ValueChanged<bool> onToggleTools;
   final VoidCallback onStop;
+
+  /// `3/5` — how many of the server's tools are enabled for this chat.
+  final String? toolsSummary;
+
+  /// Opens the per-chat tool picker; null hides the button.
+  final VoidCallback? onPickTools;
+
+  /// Label of the "Knowledge" chip (the chat's collection scope); null
+  /// hides the chip.
+  final String? knowledgeLabel;
+  final VoidCallback? onPickKnowledge;
+
+  /// Per-turn model override chip (built by the screen from the catalog);
+  /// null when the server lists no models.
+  final Widget? modelChip;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -551,6 +608,9 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final toolsLabel = widget.useTools && widget.toolsSummary != null
+        ? 'Tools · ${widget.toolsSummary}'
+        : 'Tools';
     return SafeArea(
       top: false,
       child: Container(
@@ -571,20 +631,45 @@ class _ComposerState extends State<Composer> {
             children: [
               Row(
                 children: [
-                  _ToggleChip(
-                    label: 'RAG',
-                    active: widget.useRag,
-                    icon: Icons.menu_book_rounded,
-                    onTap: () => widget.onToggleRag(!widget.useRag),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ComposerChip(
+                            label: 'RAG',
+                            active: widget.useRag,
+                            icon: Icons.menu_book_rounded,
+                            onTap: () => widget.onToggleRag(!widget.useRag),
+                          ),
+                          const SizedBox(width: NexusSpacing.sm),
+                          ComposerChip(
+                            label: toolsLabel,
+                            active: widget.useTools,
+                            icon: Icons.build_rounded,
+                            onTap: () => widget.onToggleTools(!widget.useTools),
+                            trailing: widget.useTools && widget.onPickTools != null
+                                ? Icons.tune_rounded
+                                : null,
+                            onTrailingTap: widget.onPickTools,
+                          ),
+                          if (widget.knowledgeLabel != null) ...[
+                            const SizedBox(width: NexusSpacing.sm),
+                            ComposerChip(
+                              label: widget.knowledgeLabel!,
+                              active: widget.useRag,
+                              icon: Icons.collections_bookmark_rounded,
+                              onTap: widget.onPickKnowledge,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: NexusSpacing.sm),
-                  _ToggleChip(
-                    label: 'Tools',
-                    active: widget.useTools,
-                    icon: Icons.build_rounded,
-                    onTap: () => widget.onToggleTools(!widget.useTools),
-                  ),
-                  const Spacer(),
+                  if (widget.modelChip != null) ...[
+                    const SizedBox(width: NexusSpacing.sm),
+                    widget.modelChip!,
+                  ],
                 ],
               ),
               const SizedBox(height: NexusSpacing.sm),
@@ -634,53 +719,75 @@ class _ComposerState extends State<Composer> {
   }
 }
 
-class _ToggleChip extends StatelessWidget {
-  const _ToggleChip({
+/// Pill used in the composer's option row (RAG / Tools / Knowledge / model).
+class ComposerChip extends StatelessWidget {
+  const ComposerChip({
+    super.key,
     required this.label,
     required this.active,
     required this.icon,
-    required this.onTap,
+    this.onTap,
+    this.trailing,
+    this.onTrailingTap,
   });
 
   final String label;
   final bool active;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+
+  /// Secondary icon at the end of the pill (e.g. "tune" to open a picker).
+  final IconData? trailing;
+  final VoidCallback? onTrailingTap;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final body = AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: active ? NexusColors.crimson.withValues(alpha: 0.15) : t.surfaceHigh,
+        borderRadius: const BorderRadius.all(NexusRadius.pill),
+        border: Border.all(color: active ? NexusColors.crimson : t.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: active ? NexusColors.crimson : t.textSecondary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: active ? t.textPrimary : t.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onTrailingTap,
+              borderRadius: const BorderRadius.all(NexusRadius.pill),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(trailing, size: 14, color: active ? NexusColors.crimson : t.textMuted),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: const BorderRadius.all(NexusRadius.pill),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: active ? NexusColors.crimson.withValues(alpha: 0.15) : t.surfaceHigh,
-            borderRadius: const BorderRadius.all(NexusRadius.pill),
-            border: Border.all(color: active ? NexusColors.crimson : t.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 13, color: active ? NexusColors.crimson : t.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: active ? t.textPrimary : t.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: onTap == null
+          ? body
+          : InkWell(
+              borderRadius: const BorderRadius.all(NexusRadius.pill),
+              onTap: onTap,
+              child: body,
+            ),
     );
   }
 }

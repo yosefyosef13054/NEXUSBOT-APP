@@ -7,6 +7,7 @@ import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/auth/splash_screen.dart';
 import '../features/chat/chat_screen.dart';
+import '../features/collections/collections_screen.dart';
 import '../features/documents/documents_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../shared/home_shell.dart';
@@ -19,6 +20,7 @@ class AppRoutes {
   static const register = '/register';
   static const home = '/';
   static const documents = '/documents';
+  static const collections = '/collections';
   static const settings = '/settings';
   static String chat(String sessionId) => '/chat/$sessionId';
 }
@@ -77,6 +79,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.documents,
             pageBuilder: (_, state) => _fadePage(state.pageKey, const DocumentsScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.collections,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const CollectionsScreen()),
           ),
           GoRoute(
             path: AppRoutes.settings,

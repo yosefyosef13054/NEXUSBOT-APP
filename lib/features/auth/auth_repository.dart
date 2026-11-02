@@ -44,12 +44,23 @@ class AuthRepository {
     return User.fromJson(res.data!);
   }
 
-  /// `PATCH /auth/me` — currently only the display name is editable.
+  /// `PATCH /auth/me` — the display name.
   Future<User> updateProfile({required String fullName}) async {
     final res = await _client.request<Map<String, dynamic>>(
       '/auth/me',
       method: 'PATCH',
       data: {'full_name': fullName},
+    );
+    return User.fromJson(res.data!);
+  }
+
+  /// `PATCH /auth/me {default_model}` — the account-wide default model for
+  /// new chats (validated against `GET /models`); null clears it.
+  Future<User> setDefaultModel(String? modelId) async {
+    final res = await _client.request<Map<String, dynamic>>(
+      '/auth/me',
+      method: 'PATCH',
+      data: {'default_model': modelId},
     );
     return User.fromJson(res.data!);
   }

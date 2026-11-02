@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/api_exception.dart';
-import '../core/preferences.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
@@ -11,14 +12,18 @@ import '../features/auth/auth_providers.dart';
 import '../features/auth/auth_repository.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
+import '../features/models/models_repository.dart';
+import 'highlight_text.dart';
 
 /// Persistent left sidebar shown on tablet/desktop (and inside the drawer on
 /// mobile). Contains:
 /// - Brand
 /// - "New chat" button
-/// - Search field
+/// - Search field: filters chat titles locally and, debounced, runs
+///   `POST /search` across message contents (results show the server's
+///   `<mark>` highlights)
 /// - Session list (with rename/delete actions)
-/// - Documents / Settings links
+/// - Documents / Collections / Settings links
 /// - User profile dropdown (settings + sign out)
 ///
 /// Navigation goes through the router (`context.go`), so the selected session
@@ -51,13 +56,68 @@ class Sidebar extends ConsumerStatefulWidget {
 }
 
 class _SidebarState extends ConsumerState<Sidebar> {
+  /// Wait for typing to pause before hitting `POST /search`.
+  static const searchDebounce = Duration(milliseconds: 350);
+
   final _search = TextEditingController();
   bool _creating = false;
 
+  Timer? _debounce;
+  List<SearchResult>? _results;
+  bool _searching = false;
+  String? _searchError;
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    final query = value.trim();
+    if (query.length < 2) {
+      setState(() {
+        _results = null;
+        _searching = false;
+        _searchError = null;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(searchDebounce, () => _runSearch(query));
+  }
+
+  Future<void> _runSearch(String query) async {
+    try {
+      final repo = await ref.read(chatRepositoryProvider.future);
+      final results = await repo.search(query);
+      if (!mounted || _search.text.trim() != query) return; // stale
+      setState(() {
+        _results = results;
+        _searching = false;
+        _searchError = null;
+      });
+    } catch (e) {
+      if (!mounted || _search.text.trim() != query) return;
+      setState(() {
+        _results = null;
+        _searching = false;
+        _searchError = errorText(e);
+      });
+    }
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    setState(() {
+      _search.clear();
+      _results = null;
+      _searching = false;
+      _searchError = null;
+    });
   }
 
   void _go(String location) {
@@ -74,7 +134,9 @@ class _SidebarState extends ConsumerState<Sidebar> {
     setState(() => _creating = true);
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final s = await repo.createSession(model: ref.read(prefsProvider).model);
+      // Only a model the server lists is sent; null lets the server resolve
+      // the user's / its own default.
+      final s = await repo.createSession(model: ref.read(defaultModelIdProvider));
       ref.invalidate(sessionListProvider);
       if (!mounted) return;
       _go(AppRoutes.chat(s.id));
@@ -186,15 +248,15 @@ class _SidebarState extends ConsumerState<Sidebar> {
               padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg),
               child: TextField(
                 controller: _search,
-                onChanged: (_) => setState(() {}),
+                onChanged: _onSearchChanged,
                 decoration: InputDecoration(
-                  hintText: 'Search chats…',
+                  hintText: 'Search chats and messages…',
                   prefixIcon: const Icon(Icons.search_rounded, size: 18),
                   suffixIcon: _search.text.isEmpty
                       ? null
                       : IconButton(
                           icon: const Icon(Icons.close_rounded, size: 16),
-                          onPressed: () => setState(_search.clear),
+                          onPressed: _clearSearch,
                         ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
@@ -243,10 +305,22 @@ class _SidebarState extends ConsumerState<Sidebar> {
                 ),
                 data: (list) {
                   final filtered = _filtered(list);
+                  if (_search.text.trim().isNotEmpty) {
+                    return _SearchResults(
+                      chats: filtered,
+                      selectedSessionId: widget.selectedSessionId,
+                      results: _results,
+                      searching: _searching,
+                      error: _searchError,
+                      onOpenChat: (id) => _go(AppRoutes.chat(id)),
+                      onRename: _rename,
+                      onDelete: _delete,
+                    );
+                  }
                   if (filtered.isEmpty) {
                     return Center(
                       child: Text(
-                        _search.text.isEmpty ? 'No chats yet' : 'No matches',
+                        'No chats yet',
                         style: TextStyle(color: t.textMuted, fontSize: 12),
                       ),
                     );
@@ -278,6 +352,12 @@ class _SidebarState extends ConsumerState<Sidebar> {
               label: 'Documents',
               active: widget.location.startsWith(AppRoutes.documents),
               onTap: () => _go(AppRoutes.documents),
+            ),
+            _SidebarLink(
+              icon: Icons.collections_bookmark_rounded,
+              label: 'Collections',
+              active: widget.location.startsWith(AppRoutes.collections),
+              onTap: () => _go(AppRoutes.collections),
             ),
             _SidebarLink(
               icon: Icons.settings_rounded,
@@ -373,6 +453,165 @@ class _SidebarState extends ConsumerState<Sidebar> {
     final q = _search.text.trim().toLowerCase();
     if (q.isEmpty) return all;
     return all.where((s) => s.title.toLowerCase().contains(q)).toList();
+  }
+}
+
+/// Search mode of the sidebar: chats whose title matches, then the
+/// server's message hits ("MESSAGES") with their `<mark>` highlights.
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({
+    required this.chats,
+    required this.selectedSessionId,
+    required this.results,
+    required this.searching,
+    required this.error,
+    required this.onOpenChat,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final List<ChatSession> chats;
+  final String? selectedSessionId;
+  final List<SearchResult>? results;
+  final bool searching;
+  final String? error;
+  final ValueChanged<String> onOpenChat;
+  final ValueChanged<ChatSession> onRename;
+  final ValueChanged<ChatSession> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final hits = results;
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm),
+      children: [
+        if (chats.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
+            child: Text('No chat titles match', style: TextStyle(color: t.textMuted, fontSize: 12)),
+          )
+        else
+          for (final s in chats)
+            _SessionTile(
+              session: s,
+              selected: selectedSessionId == s.id,
+              onTap: () => onOpenChat(s.id),
+              onRename: () => onRename(s),
+              onDelete: () => onDelete(s),
+            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(NexusSpacing.sm, NexusSpacing.md, NexusSpacing.sm, 6),
+          child: Row(
+            children: [
+              Text(
+                'MESSAGES',
+                style: TextStyle(
+                  color: t.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 3,
+                ),
+              ),
+              const Spacer(),
+              if (searching)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation(t.textMuted),
+                  ),
+                )
+              else if (hits != null)
+                Text('${hits.length}', style: TextStyle(color: t.textMuted, fontSize: 11)),
+            ],
+          ),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
+            child: Text(error!, style: TextStyle(color: t.textMuted, fontSize: 12)),
+          )
+        else if (hits != null && hits.isEmpty && !searching)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
+            child: Text('No messages match', style: TextStyle(color: t.textMuted, fontSize: 12)),
+          )
+        else if (hits == null && !searching)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
+            child: Text(
+              'Type at least two characters',
+              style: TextStyle(color: t.textMuted, fontSize: 12),
+            ),
+          )
+        else if (hits != null)
+          for (final r in hits)
+            _SearchResultTile(result: r, onTap: () => onOpenChat(r.sessionId)),
+      ],
+    );
+  }
+}
+
+class _SearchResultTile extends StatelessWidget {
+  const _SearchResultTile({required this.result, required this.onTap});
+  final SearchResult result;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final snippet = result.highlight ?? result.snippet;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: const BorderRadius.all(NexusRadius.md),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.md, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      result.role == MessageRole.user
+                          ? Icons.person_outline_rounded
+                          : Icons.auto_awesome_rounded,
+                      size: 12,
+                      color: t.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        result.sessionTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: t.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                HighlightedText(
+                  snippet,
+                  maxLines: 2,
+                  style: TextStyle(color: t.textMuted, fontSize: 12, height: 1.35),
+                  markStyle: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

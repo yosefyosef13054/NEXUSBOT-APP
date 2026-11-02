@@ -134,12 +134,18 @@ class ChatWebSocket {
   }
 
   /// Send a user message frame matching the backend's expected schema.
+  ///
+  /// [model] is a per-turn model override and [collectionIds] the knowledge
+  /// scope for this turn; both are omitted (server resolves the session /
+  /// user default) when null.
   void sendUserMessage({
     required String content,
     bool useRag = true,
     bool useTools = true,
     List<String>? toolNames,
     double? temperature,
+    String? model,
+    List<String>? collectionIds,
   }) {
     _send({
       'type': 'user_message',
@@ -148,7 +154,15 @@ class ChatWebSocket {
       'use_tools': useTools,
       'tool_names': toolNames,
       'temperature': temperature,
+      if (model != null) 'model': model,
+      if (collectionIds != null) 'collection_ids': collectionIds,
     });
+  }
+
+  /// Resolve a pending approval; the continuation of the turn (`tool_call`,
+  /// `token`, …, `assistant_message`) then arrives on this socket.
+  void sendApproval({required String approvalId, required ApprovalDecision decision}) {
+    _send({'type': 'approval', 'approval_id': approvalId, 'decision': decision.wire});
   }
 
   /// Ask the server to cancel the in-flight generation. The server persists

@@ -11,6 +11,9 @@ class Document {
     this.error,
     this.progress,
     this.sha256,
+    this.collectionId,
+    this.sessionId,
+    this.sourceUrl,
   });
 
   factory Document.fromJson(Map<String, dynamic> j) {
@@ -25,6 +28,9 @@ class Document {
       createdAt: DateTime.parse(j['created_at'] as String),
       progress: (meta['progress'] as num?)?.toInt().clamp(0, 100),
       sha256: meta['sha256'] as String?,
+      collectionId: j['collection_id'] as String?,
+      sessionId: j['session_id'] as String?,
+      sourceUrl: j['source_url'] as String?,
     );
   }
 
@@ -42,16 +48,74 @@ class Document {
   /// Content hash (`meta.sha256`); the server de-duplicates uploads on it.
   final String? sha256;
 
+  /// The collection (knowledge base) the document belongs to, if any.
+  final String? collectionId;
+
+  /// Set when the document is scoped to a single chat.
+  final String? sessionId;
+
+  /// The page this document was ingested from (`POST /documents/from-url`).
+  final String? sourceUrl;
+
+  /// Host of [sourceUrl], for a compact "from example.com" hint.
+  String? get sourceHost {
+    final url = sourceUrl;
+    if (url == null) return null;
+    final host = Uri.tryParse(url)?.host;
+    return host == null || host.isEmpty ? null : host;
+  }
+
   bool get isInFlight =>
       status == DocumentStatus.pending || status == DocumentStatus.processing;
 }
 
-/// Result of `POST /documents`. [queued] is false when the same file was
-/// already uploaded by this user — [document] is then the existing one.
+/// Result of `POST /documents` / `POST /documents/from-url`. [queued] is
+/// false when the same content was already uploaded by this user —
+/// [document] is then the existing one.
 class UploadResult {
   const UploadResult({required this.document, required this.queued});
+
+  factory UploadResult.fromJson(Map<String, dynamic> body) => UploadResult(
+        document: Document.fromJson((body['document'] as Map).cast<String, dynamic>()),
+        queued: body['queued'] != false,
+      );
+
   final Document document;
   final bool queued;
+}
+
+/// One indexed chunk of a document (`GET /documents/{id}/chunks[/{chunk_id}]`).
+class DocumentChunk {
+  const DocumentChunk({
+    required this.id,
+    required this.chunkIndex,
+    required this.content,
+    this.page,
+    this.section,
+    this.startIndex,
+    this.endIndex,
+    this.tokens,
+  });
+
+  factory DocumentChunk.fromJson(Map<String, dynamic> j) => DocumentChunk(
+        id: (j['id'] as String?) ?? '',
+        chunkIndex: (j['chunk_index'] as num?)?.toInt() ?? 0,
+        content: (j['content'] as String?) ?? '',
+        page: (j['page'] as num?)?.toInt(),
+        section: j['section'] as String?,
+        startIndex: (j['start_index'] as num?)?.toInt(),
+        endIndex: (j['end_index'] as num?)?.toInt(),
+        tokens: (j['tokens'] as num?)?.toInt(),
+      );
+
+  final String id;
+  final int chunkIndex;
+  final String content;
+  final int? page;
+  final String? section;
+  final int? startIndex;
+  final int? endIndex;
+  final int? tokens;
 }
 
 DocumentStatus _parseStatus(String s) {

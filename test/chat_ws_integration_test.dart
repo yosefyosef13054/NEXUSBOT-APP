@@ -54,6 +54,21 @@ void main() {
             send({'type': 'pong'});
           case 'stop':
             stopRequested = true;
+          case 'approval':
+            if (!authed) return;
+            send({
+              'type': 'tool_call',
+              'data': {'phase': 'end', 'tool': 'web_search', 'call_id': 'call_1', 'output': 'r'},
+            });
+            send({'type': 'token', 'data': 'Approved.'});
+            send({
+              'type': 'done',
+              'data': {'text': 'Approved.', 'status': 'ok', 'model': 'gpt-4o-mini'},
+            });
+            send({
+              'type': 'assistant_message',
+              'data': {'id': 'a-placeholder', 'content': 'Approved.', 'status': 'ok'},
+            });
           case 'user_message':
             if (!authed) {
               send({'type': 'error', 'data': {'code': 'unauthorized', 'message': 'auth first'}});
@@ -192,6 +207,38 @@ void main() {
     }
     await ws.close();
     expect(events.whereType<ErrorEvent>().single.code, 'busy');
+  });
+
+  test('user_message carries model and collection_ids only when set', () async {
+    final ws = await connect();
+    ws.sendUserMessage(
+      content: 'scoped',
+      model: 'gpt-4o',
+      collectionIds: const ['c1', 'c2'],
+      toolNames: const ['calculator'],
+    );
+    await collect(ws).timeout(const Duration(seconds: 5));
+    await ws.close();
+    final frame = received.firstWhere((f) => f['type'] == 'user_message');
+    expect(frame['model'], 'gpt-4o');
+    expect(frame['collection_ids'], ['c1', 'c2']);
+    expect(frame['tool_names'], ['calculator']);
+  });
+
+  test('approval frame resumes the turn on the same socket', () async {
+    final ws = await connect();
+    ws.sendApproval(approvalId: 'ap1', decision: ApprovalDecision.approve);
+    final events = await collect(ws).timeout(const Duration(seconds: 5));
+    await ws.close();
+
+    expect(
+      received.firstWhere((f) => f['type'] == 'approval'),
+      {'type': 'approval', 'approval_id': 'ap1', 'decision': 'approve'},
+    );
+    expect(events.first, isA<ToolCallEvent>());
+    expect((events.first as ToolCallEvent).callId, 'call_1');
+    expect(events.whereType<DoneEvent>().single.model, 'gpt-4o-mini');
+    expect((events.last as AssistantMessageEvent).id, 'a-placeholder');
   });
 
   test('close shuts the socket down cleanly', () async {

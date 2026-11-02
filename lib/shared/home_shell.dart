@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../core/api_exception.dart';
 import '../core/breakpoints.dart';
-import '../core/preferences.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
+import '../features/models/models_repository.dart';
 import 'sidebar.dart';
 
 /// App shell rendered by the router's [ShellRoute]: it stays mounted while
@@ -140,7 +140,7 @@ class _HomeLandingState extends ConsumerState<HomeLanding> {
     setState(() => _creating = true);
     try {
       final repo = await ref.read(chatRepositoryProvider.future);
-      final s = await repo.createSession(model: ref.read(prefsProvider).model);
+      final s = await repo.createSession(model: ref.read(defaultModelIdProvider));
       ref.invalidate(sessionListProvider);
       if (!mounted) return;
       _redirected = true;
