@@ -1,9 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nexusbot/core/theme.dart';
 import 'package:nexusbot/features/attachments/attachment_widgets.dart';
 import 'package:nexusbot/features/attachments/attachments_repository.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
@@ -18,16 +16,16 @@ import 'package:nexusbot/features/voice/recorder.dart';
 import 'package:nexusbot/features/voice/voice_button.dart';
 import 'package:nexusbot/shared/highlight_text.dart';
 
+import 'helpers/test_app.dart';
+
 /// Layout smoke tests for the Phase 2 chat widgets: the approval card inside
 /// the bubble, collapsible tool chips (with `call_id` hiding), the structured
 /// citation strip and `<mark>` highlights. They exist mainly to catch
 /// parent-data / layout mistakes the analyzer cannot see.
-Widget host(Widget child) => ProviderScope(
+Widget host(Widget child, {TextDirection? textDirection}) => localizedApp(
       overrides: [attachmentContentLoaderProvider.overrideWithValue(FakeContentLoader())],
-      child: MaterialApp(
-        theme: buildNexusTheme(dark: true),
-        home: Scaffold(body: ListView(children: [child])),
-      ),
+      textDirection: textDirection,
+      child: child,
     );
 
 /// Serves a 1×1 PNG for every content URL (the widgets never hit the network).
@@ -835,20 +833,18 @@ void main() {
     ];
     ToolSelection? result;
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildNexusTheme(dark: true),
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () async {
-                result = await showToolPickerSheet(
-                  context,
-                  tools: tools,
-                  selected: const ['calculator'],
-                );
-              },
-              child: const Text('open'),
-            ),
+      localizedApp(
+        scrollable: false,
+        child: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              result = await showToolPickerSheet(
+                context,
+                tools: tools,
+                selected: const ['calculator'],
+              );
+            },
+            child: const Text('open'),
           ),
         ),
       ),

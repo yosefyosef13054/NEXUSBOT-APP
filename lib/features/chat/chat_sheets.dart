@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import '../collections/collection_model.dart';
 import '../models/model_info.dart';
 import '../tools/tools_repository.dart';
@@ -48,22 +49,22 @@ class _ToolPickerSheetState extends State<_ToolPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return _SheetScaffold(
-      title: 'Tools for this chat',
-      subtitle: 'Pick what the agent may use. Tools marked with a shield ask for '
-          'your approval before they run.',
+      title: l10n.toolPickerTitle,
+      subtitle: l10n.toolPickerSubtitle,
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(const ToolSelection(null)),
-          child: const Text('Reset to default'),
+          child: Text(l10n.toolPickerReset),
         ),
         const Spacer(),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(ToolSelection(_checked.toList())),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Apply'),
+          child: Text(l10n.commonApply),
         ),
       ],
       child: ListView(
@@ -98,9 +99,9 @@ class _ToolPickerSheetState extends State<_ToolPickerSheet> {
                     ),
                     if (tool.requiresApproval) ...[
                       const SizedBox(width: 6),
-                      const Tooltip(
-                        message: 'Asks for your approval before running',
-                        child: Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
+                      Tooltip(
+                        message: l10n.toolApprovalTooltip,
+                        child: const Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
                       ),
                     ],
                   ],
@@ -124,7 +125,9 @@ class ToolGroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
+    final label = group.isBuiltin ? l10n.toolGroupBuiltin : group.label;
     return Padding(
       padding: const EdgeInsets.fromLTRB(NexusSpacing.sm, NexusSpacing.md, NexusSpacing.sm, 2),
       child: Row(
@@ -136,7 +139,7 @@ class ToolGroupHeader extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            group.label.toUpperCase(),
+            label.toUpperCase(),
             style: TextStyle(
               color: t.textMuted,
               fontSize: 10,
@@ -146,7 +149,7 @@ class ToolGroupHeader extends StatelessWidget {
           ),
           if (!group.isBuiltin) ...[
             const SizedBox(width: 6),
-            Text('MCP server', style: TextStyle(color: t.textMuted, fontSize: 10)),
+            Text(l10n.toolMcpServer, style: TextStyle(color: t.textMuted, fontSize: 10)),
           ],
         ],
       ),
@@ -198,20 +201,20 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return _SheetScaffold(
-      title: 'Knowledge for this chat',
-      subtitle: 'Answers are grounded in the selected collections. The choice is saved '
-          'as this chat\'s default.',
+      title: l10n.knowledgeTitle,
+      subtitle: l10n.knowledgeSubtitle,
       actions: [
         const Spacer(),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(
             CollectionSelection(_all ? null : _checked.toList()),
           ),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Apply'),
+          child: Text(l10n.commonApply),
         ),
       ],
       child: ListView(
@@ -223,11 +226,11 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
             activeTrackColor: NexusColors.crimson,
             contentPadding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm),
             title: Text(
-              'All documents',
+              l10n.knowledgeAllDocs,
               style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
             ),
             subtitle: Text(
-              'Search everything you uploaded.',
+              l10n.knowledgeAllDocsSubtitle,
               style: TextStyle(color: t.textMuted, fontSize: 12),
             ),
           ),
@@ -257,7 +260,7 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
               ),
               subtitle: Text(
                 [
-                  '${c.documentCount} document${c.documentCount == 1 ? '' : 's'}',
+                  l10n.collectionDocCount(c.documentCount),
                   if (c.description != null && c.description!.isNotEmpty) c.description!,
                 ].join(' · '),
                 maxLines: 1,
@@ -269,7 +272,7 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
             Padding(
               padding: const EdgeInsets.all(NexusSpacing.lg),
               child: Text(
-                'No collections yet — create one from the Collections screen.',
+                l10n.knowledgeNoCollections,
                 style: TextStyle(color: t.textMuted, fontSize: 12.5),
               ),
             ),
@@ -324,17 +327,17 @@ class _FeedbackCommentSheetState extends State<_FeedbackCommentSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return _SheetScaffold(
-      title: 'What went wrong?',
-      subtitle: 'Optional — a short note helps improve the answers. The thumbs-down is '
-          'recorded either way.',
+      title: l10n.feedbackTitle,
+      subtitle: l10n.feedbackSubtitle,
       actions: [
         const Spacer(),
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(FeedbackComment(_ctrl.text.trim())),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Send'),
+          child: Text(l10n.commonSend),
         ),
       ],
       child: Padding(
@@ -344,7 +347,7 @@ class _FeedbackCommentSheetState extends State<_FeedbackCommentSheet> {
           autofocus: true,
           minLines: 2,
           maxLines: 5,
-          decoration: const InputDecoration(hintText: 'e.g. The answer ignored my document'),
+          decoration: InputDecoration(hintText: l10n.feedbackHint),
         ),
       ),
     );
@@ -382,7 +385,7 @@ class ModelMenuButton extends StatelessWidget {
     final t = context.tokens;
     return PopupMenuButton<String>(
       enabled: enabled,
-      tooltip: tooltip ?? 'Choose model',
+      tooltip: tooltip ?? context.l10n.modelChooseTooltip,
       onSelected: (v) => onSelected(v == _defaultValue ? null : v),
       itemBuilder: (_) => [
         if (defaultEntry != null)

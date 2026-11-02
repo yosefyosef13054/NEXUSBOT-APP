@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import '../attachments/attachment_widgets.dart';
 import 'approval_card.dart';
 import 'chat_models.dart';
@@ -19,6 +20,10 @@ export '../attachments/attachment_widgets.dart' show AttachmentSource;
 // ============================================================================
 // MessageBubble — wraps the bubble with tool chips above, citations below,
 // and a row of message-level actions (copy, regenerate, edit, feedback).
+//
+// Everything is laid out with logical (start / end) geometry: the user's
+// bubbles sit at the end side, the assistant's at the start side, so the
+// chat mirrors as a whole under RTL.
 // ============================================================================
 
 class MessageBubble extends StatefulWidget {
@@ -43,6 +48,8 @@ class MessageBubble extends StatefulWidget {
     this.onOpenArtifact,
     this.onPlayAudio,
     this.playingAudio = false,
+    this.onRetrySend,
+    this.onCancelSend,
   });
 
   final ChatMessage message;
@@ -86,6 +93,11 @@ class MessageBubble extends StatefulWidget {
 
   /// Tap on the "used N memories" caption.
   final VoidCallback? onMemoriesTap;
+
+  /// Retry / cancel of a queued or parked send (user bubbles with
+  /// [ChatMessage.isQueued]).
+  final VoidCallback? onRetrySend;
+  final VoidCallback? onCancelSend;
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -132,38 +144,51 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ToolCallChips(calls: toolCalls),
                 const SizedBox(height: NexusSpacing.xs),
               ],
-              _BubbleContainer(
-                isUser: _isUser,
-                child: widget.editing
-                    ? _InlineEditor(
-                        initial: message.content,
-                        onSubmit: widget.onSubmitEdit,
-                        onCancel: widget.onCancelEdit,
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_isUser && message.attachments.isNotEmpty) ...[
-                            MessageAttachments(
-                              attachments: message.attachments,
-                              onOpen: widget.onOpenAttachment,
-                            ),
-                            if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.sm),
+              Opacity(
+                opacity: message.isQueued ? 0.75 : 1,
+                child: _BubbleContainer(
+                  isUser: _isUser,
+                  child: widget.editing
+                      ? _InlineEditor(
+                          initial: message.content,
+                          onSubmit: widget.onSubmitEdit,
+                          onCancel: widget.onCancelEdit,
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isUser && message.attachments.isNotEmpty) ...[
+                              MessageAttachments(
+                                attachments: message.attachments,
+                                onOpen: widget.onOpenAttachment,
+                              ),
+                              if (message.content.isNotEmpty)
+                                const SizedBox(height: NexusSpacing.sm),
+                            ],
+                            if (approval == null || message.content.isNotEmpty)
+                              _BubbleContent(message: message),
+                            if (approval != null) ...[
+                              if (message.content.isNotEmpty)
+                                const SizedBox(height: NexusSpacing.md),
+                              ApprovalCard(
+                                approval: approval,
+                                busy: widget.approvalBusy,
+                                onDecision: widget.onApprovalDecision,
+                              ),
+                            ],
                           ],
-                          if (approval == null || message.content.isNotEmpty)
-                            _BubbleContent(message: message),
-                          if (approval != null) ...[
-                            if (message.content.isNotEmpty) const SizedBox(height: NexusSpacing.md),
-                            ApprovalCard(
-                              approval: approval,
-                              busy: widget.approvalBusy,
-                              onDecision: widget.onApprovalDecision,
-                            ),
-                          ],
-                        ],
-                      ),
+                        ),
+                ),
               ),
+              if (message.isQueued) ...[
+                const SizedBox(height: NexusSpacing.xs),
+                QueuedSendStatus(
+                  message: message,
+                  onRetry: widget.onRetrySend,
+                  onCancel: widget.onCancelSend,
+                ),
+              ],
               if (message.interrupted && !message.streaming) ...[
                 const SizedBox(height: NexusSpacing.xs),
                 const _StoppedMarker(),
@@ -194,7 +219,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                 duration: const Duration(milliseconds: 150),
                 crossFadeState: (_showActions || widget.isLastAssistant || _hasSiblings) &&
                         !message.streaming &&
-                        !widget.editing
+                        !widget.editing &&
+                        !message.isQueued
                     ? CrossFadeState.showSecond
                     : CrossFadeState.showFirst,
                 firstChild: const SizedBox(height: 4),
@@ -226,6 +252,81 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   bool get _hasSiblings => widget.message.siblings?.hasSiblings == true;
+}
+
+/// "Waiting to send…" / "Not sent · reason" under a queued user bubble, with
+/// retry and cancel.
+class QueuedSendStatus extends StatelessWidget {
+  const QueuedSendStatus({super.key, required this.message, this.onRetry, this.onCancel});
+
+  final ChatMessage message;
+  final VoidCallback? onRetry;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final t = context.tokens;
+    final failed = message.delivery == MessageDelivery.failed;
+    final reason = message.deliveryError;
+    final label = failed
+        ? (reason == null || reason.isEmpty
+            ? l10n.chatQueuedFailed
+            : '${l10n.chatQueuedFailed} · $reason')
+        : l10n.chatQueuedLabel;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          failed ? Icons.error_outline_rounded : Icons.schedule_rounded,
+          size: 12,
+          color: failed ? NexusColors.crimson : t.textMuted,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: failed ? NexusColors.crimson : t.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (onRetry != null && failed) ...[
+          const SizedBox(width: 4),
+          _SmallTextButton(label: l10n.chatRetrySend, onTap: onRetry!),
+        ],
+        if (onCancel != null) ...[
+          const SizedBox(width: 2),
+          _SmallTextButton(label: l10n.chatCancelSend, onTap: onCancel!),
+        ],
+      ],
+    );
+  }
+}
+
+class _SmallTextButton extends StatelessWidget {
+  const _SmallTextButton({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: NexusColors.crimson,
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+      child: Text(label),
+    );
+  }
 }
 
 class _MessageActionsRow extends StatelessWidget {
@@ -261,7 +362,9 @@ class _MessageActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
+    final locale = Localizations.localeOf(context).toString();
     return Row(
       mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
       children: [
@@ -274,14 +377,14 @@ class _MessageActionsRow extends StatelessWidget {
           const SizedBox(width: 8),
         ],
         Text(
-          DateFormat.jm().format(timestamp.toLocal()),
+          DateFormat.jm(locale).format(timestamp.toLocal()),
           style: TextStyle(color: t.textMuted, fontSize: 11),
         ),
         if (model != null && model!.isNotEmpty) ...[
           const SizedBox(width: 8),
           Flexible(
             child: Tooltip(
-              message: 'Model: $model',
+              message: l10n.msgModelTooltip(model!),
               child: Text(
                 '· $model',
                 maxLines: 1,
@@ -294,7 +397,7 @@ class _MessageActionsRow extends StatelessWidget {
         const SizedBox(width: 8),
         _ActionIcon(
           icon: copied ? Icons.check_rounded : Icons.copy_rounded,
-          tooltip: copied ? 'Copied' : 'Copy',
+          tooltip: copied ? l10n.commonCopied : l10n.commonCopy,
           color: copied ? NexusColors.success : t.textMuted,
           onTap: onCopy,
         ),
@@ -302,7 +405,7 @@ class _MessageActionsRow extends StatelessWidget {
           const SizedBox(width: 4),
           _ActionIcon(
             icon: Icons.edit_outlined,
-            tooltip: 'Edit',
+            tooltip: l10n.msgEdit,
             color: t.textMuted,
             onTap: onEdit!,
           ),
@@ -311,7 +414,7 @@ class _MessageActionsRow extends StatelessWidget {
           const SizedBox(width: 4),
           _ActionIcon(
             icon: Icons.refresh_rounded,
-            tooltip: 'Regenerate',
+            tooltip: l10n.msgRegenerate,
             color: t.textMuted,
             onTap: onRegenerate!,
           ),
@@ -358,6 +461,7 @@ class _InlineEditorState extends State<_InlineEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
@@ -369,18 +473,18 @@ class _InlineEditorState extends State<_InlineEditor> {
           maxLines: 8,
           style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
           cursorColor: Colors.white,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             isDense: true,
             filled: true,
-            fillColor: Color(0x26000000),
-            hintText: 'Edit your message',
-            hintStyle: TextStyle(color: Colors.white70),
-            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            enabledBorder: OutlineInputBorder(
+            fillColor: const Color(0x26000000),
+            hintText: l10n.editorHint,
+            hintStyle: const TextStyle(color: Colors.white70),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            enabledBorder: const OutlineInputBorder(
               borderRadius: BorderRadius.all(NexusRadius.sm),
               borderSide: BorderSide(color: Colors.white38),
             ),
-            focusedBorder: OutlineInputBorder(
+            focusedBorder: const OutlineInputBorder(
               borderRadius: BorderRadius.all(NexusRadius.sm),
               borderSide: BorderSide(color: Colors.white),
             ),
@@ -393,7 +497,7 @@ class _InlineEditorState extends State<_InlineEditor> {
             TextButton(
               onPressed: widget.onCancel,
               style: TextButton.styleFrom(foregroundColor: Colors.white),
-              child: const Text('Cancel'),
+              child: Text(l10n.commonCancel),
             ),
             const SizedBox(width: NexusSpacing.xs),
             FilledButton.icon(
@@ -405,7 +509,7 @@ class _InlineEditorState extends State<_InlineEditor> {
                 visualDensity: VisualDensity.compact,
               ),
               icon: const Icon(Icons.send_rounded, size: 14),
-              label: const Text('Save & send'),
+              label: Text(l10n.editorSaveSend),
             ),
           ],
         ),
@@ -422,6 +526,7 @@ class _ListenChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Material(
       color: Colors.transparent,
@@ -445,7 +550,7 @@ class _ListenChip extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                playing ? 'Stop' : 'Play reply',
+                playing ? l10n.listenStop : l10n.listenPlay,
                 style: TextStyle(
                   color: t.textPrimary,
                   fontSize: 11,
@@ -475,7 +580,7 @@ class _StoppedMarker extends StatelessWidget {
         Icon(Icons.stop_circle_outlined, size: 12, color: t.textMuted),
         const SizedBox(width: 4),
         Text(
-          'Stopped',
+          context.l10n.stoppedLabel,
           style: TextStyle(
             color: t.textMuted,
             fontSize: 11,
@@ -529,18 +634,20 @@ class _BubbleContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final maxWidth = MediaQuery.sizeOf(context).width * 0.82;
+    // The small "tail" corner faces the edge the bubble sits on (end for
+    // the user, start for the assistant), in either text direction.
     final radius = isUser
-        ? const BorderRadius.only(
-            topLeft: NexusRadius.lg,
-            topRight: NexusRadius.lg,
-            bottomLeft: NexusRadius.lg,
-            bottomRight: NexusRadius.sm,
+        ? const BorderRadiusDirectional.only(
+            topStart: NexusRadius.lg,
+            topEnd: NexusRadius.lg,
+            bottomStart: NexusRadius.lg,
+            bottomEnd: NexusRadius.sm,
           )
-        : const BorderRadius.only(
-            topLeft: NexusRadius.lg,
-            topRight: NexusRadius.lg,
-            bottomRight: NexusRadius.lg,
-            bottomLeft: NexusRadius.sm,
+        : const BorderRadiusDirectional.only(
+            topStart: NexusRadius.lg,
+            topEnd: NexusRadius.lg,
+            bottomEnd: NexusRadius.lg,
+            bottomStart: NexusRadius.sm,
           );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth.clamp(280, 720)),
@@ -588,7 +695,7 @@ class _BubbleContent extends StatelessWidget {
 
     if (isUser) {
       return SelectableText(
-        message.content,
+        message.isVoicePlaceholder ? context.l10n.chatVoiceMessagePlaceholder : message.content,
         style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
       );
     }
@@ -612,9 +719,10 @@ class _BubbleContent extends StatelessWidget {
         codeblockPadding: EdgeInsets.zero,
         codeblockDecoration: const BoxDecoration(),
         blockquoteDecoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: NexusColors.crimson, width: 3)),
+          border: BorderDirectional(start: BorderSide(color: NexusColors.crimson, width: 3)),
         ),
-        blockquotePadding: const EdgeInsets.only(left: 12),
+        blockquotePadding:
+            const EdgeInsetsDirectional.only(start: 12).resolve(Directionality.of(context)),
         h1: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w800),
         h2: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w800),
         listBullet: const TextStyle(color: NexusColors.crimson),
@@ -809,6 +917,9 @@ class Composer extends StatefulWidget {
     required this.onToggleRag,
     required this.onToggleTools,
     required this.onStop,
+    this.controller,
+    this.focusNode,
+    this.enterSends = false,
     this.stopping = false,
     this.enabled = true,
     this.disabledHint,
@@ -831,6 +942,16 @@ class Composer extends StatefulWidget {
 
   final void Function(String) onSend;
   final bool sending;
+
+  /// The text field's controller / focus node; the screen passes its own to
+  /// pre-fill a draft (share intake) or move the focus. Owned by the
+  /// composer when null.
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+
+  /// Desktop: Enter sends, Shift + Enter inserts a newline. Off (the
+  /// default), Enter inserts a newline like a phone keyboard.
+  final bool enterSends;
 
   /// Uploads waiting to go out with the next message.
   final List<Attachment> attachments;
@@ -892,13 +1013,17 @@ class Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<Composer> {
-  final _controller = TextEditingController();
-  final _focus = FocusNode();
+  TextEditingController? _ownController;
+  FocusNode? _ownFocus;
+
+  TextEditingController get _controller =>
+      widget.controller ?? (_ownController ??= TextEditingController());
+  FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
 
   @override
   void dispose() {
-    _controller.dispose();
-    _focus.dispose();
+    _ownController?.dispose();
+    _ownFocus?.dispose();
     super.dispose();
   }
 
@@ -919,23 +1044,38 @@ class _ComposerState extends State<Composer> {
     _focus.requestFocus();
   }
 
+  /// Enter sends on desktop; Shift + Enter falls through to the field (a
+  /// newline).
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (!widget.enterSends || event is KeyUpEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+      return KeyEventResult.ignored;
+    }
+    if (HardwareKeyboard.instance.isShiftPressed) return KeyEventResult.ignored;
+    _send();
+    return KeyEventResult.handled;
+  }
+
   /// The camera entry only makes sense on a phone / tablet.
   static bool get _hasCamera =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  String get _hint {
-    if (!widget.enabled) return widget.disabledHint ?? 'Sending is paused';
-    if (widget.attachments.isNotEmpty) return 'Add a message about your attachment…';
-    return 'Message NexusBot…';
+  String _hint(AppLocalizations l10n) {
+    if (!widget.enabled) return widget.disabledHint ?? l10n.composerPaused;
+    if (widget.attachments.isNotEmpty) return l10n.composerHintAttachment;
+    return l10n.composerHint;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
-    final toolsLabel =
-        widget.useTools && widget.toolsSummary != null ? 'Tools · ${widget.toolsSummary}' : 'Tools';
+    final toolsLabel = widget.useTools && widget.toolsSummary != null
+        ? l10n.composerToolsCount(widget.toolsSummary!)
+        : l10n.composerTools;
     final hasAttachments = widget.attachments.isNotEmpty || widget.uploading > 0;
     return SafeArea(
       top: false,
@@ -963,7 +1103,7 @@ class _ComposerState extends State<Composer> {
                       child: Row(
                         children: [
                           ComposerChip(
-                            label: 'RAG',
+                            label: l10n.composerRag,
                             active: widget.useRag,
                             icon: Icons.menu_book_rounded,
                             onTap: () => widget.onToggleRag(!widget.useRag),
@@ -991,7 +1131,7 @@ class _ComposerState extends State<Composer> {
                           if (widget.speakReplies != null) ...[
                             const SizedBox(width: NexusSpacing.sm),
                             ComposerChip(
-                              label: 'Speak',
+                              label: l10n.composerSpeak,
                               active: widget.speakReplies!,
                               icon: Icons.volume_up_rounded,
                               onTap: widget.onToggleSpeak == null
@@ -1055,18 +1195,21 @@ class _ComposerState extends State<Composer> {
                             onSelected: widget.onAttach!,
                           ),
                         Expanded(
-                          child: TextField(
-                            controller: _controller,
-                            focusNode: _focus,
-                            enabled: widget.enabled,
-                            minLines: 1,
-                            maxLines: 6,
-                            textInputAction: TextInputAction.newline,
-                            decoration: InputDecoration(
-                              hintText: _hint,
-                              border: InputBorder.none,
-                              filled: false,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Focus(
+                            onKeyEvent: _onKey,
+                            child: TextField(
+                              controller: _controller,
+                              focusNode: _focus,
+                              enabled: widget.enabled,
+                              minLines: 1,
+                              maxLines: 6,
+                              textInputAction: TextInputAction.newline,
+                              decoration: InputDecoration(
+                                hintText: _hint(l10n),
+                                border: InputBorder.none,
+                                filled: false,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
                             ),
                           ),
                         ),
@@ -1077,20 +1220,20 @@ class _ComposerState extends State<Composer> {
                         if (widget.onSendBackground != null) ...[
                           const SizedBox(width: 2),
                           PopupMenuButton<String>(
-                            tooltip: 'More',
+                            tooltip: l10n.commonMore,
                             enabled: widget.enabled && !widget.sending,
                             icon: Icon(Icons.more_vert_rounded, size: 18, color: t.textMuted),
                             onSelected: (v) {
                               if (v == 'background') _sendBackground();
                             },
-                            itemBuilder: (_) => const [
+                            itemBuilder: (_) => [
                               PopupMenuItem(
                                 value: 'background',
                                 child: Row(
                                   children: [
-                                    Icon(Icons.cloud_sync_outlined, size: 16),
-                                    SizedBox(width: NexusSpacing.sm),
-                                    Text('Send in background'),
+                                    const Icon(Icons.cloud_sync_outlined, size: 16),
+                                    const SizedBox(width: NexusSpacing.sm),
+                                    Text(l10n.composerSendBackground),
                                   ],
                                 ),
                               ),
@@ -1137,10 +1280,11 @@ class _AttachMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
-    final hint = imageAttachHint ?? 'The selected model cannot read images';
+    final hint = imageAttachHint ?? l10n.attachModelNoImages;
     return PopupMenuButton<AttachmentSource>(
-      tooltip: 'Attach',
+      tooltip: l10n.attachTooltip,
       enabled: enabled,
       icon: Icon(
         Icons.attach_file_rounded,
@@ -1154,7 +1298,7 @@ class _AttachMenuButton extends StatelessWidget {
           enabled: canAttachImages,
           child: _AttachMenuRow(
             icon: Icons.photo_library_outlined,
-            label: 'Photo library',
+            label: l10n.attachPhotoLibrary,
             subtitle: canAttachImages ? null : hint,
           ),
         ),
@@ -1164,16 +1308,16 @@ class _AttachMenuButton extends StatelessWidget {
             enabled: canAttachImages,
             child: _AttachMenuRow(
               icon: Icons.photo_camera_outlined,
-              label: 'Take photo',
+              label: l10n.attachTakePhoto,
               subtitle: canAttachImages ? null : hint,
             ),
           ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: AttachmentSource.file,
           child: _AttachMenuRow(
             icon: Icons.upload_file_outlined,
-            label: 'File',
-            subtitle: 'PDF, Word, text, CSV, JSON or an audio clip',
+            label: l10n.attachFile,
+            subtitle: l10n.attachFileSubtitle,
           ),
         ),
       ],
@@ -1232,7 +1376,7 @@ class _UploadingChip extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 1.5, color: t.textMuted),
           ),
           const SizedBox(width: NexusSpacing.sm),
-          Text('Uploading…', style: TextStyle(color: t.textMuted, fontSize: 12)),
+          Text(context.l10n.composerUploading, style: TextStyle(color: t.textMuted, fontSize: 12)),
         ],
       ),
     );
@@ -1329,6 +1473,7 @@ class _SendOrStop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final VoidCallback? onTap;
     if (stopping || (!enabled && !sending)) {
@@ -1338,47 +1483,50 @@ class _SendOrStop extends StatelessWidget {
     } else {
       onTap = onSend;
     }
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          gradient: sending || !enabled ? null : NexusColors.redGradient,
-          color: sending || !enabled ? t.surfaceHigher : null,
-          borderRadius: const BorderRadius.all(NexusRadius.md),
-          boxShadow: sending || !enabled
-              ? null
-              : const [
-                  BoxShadow(
-                    color: NexusColors.crimsonGlow,
-                    blurRadius: 16,
-                    spreadRadius: -4,
-                    offset: Offset(0, 4),
+    return Tooltip(
+      message: sending ? l10n.composerStopTooltip : l10n.composerSendTooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            gradient: sending || !enabled ? null : NexusColors.redGradient,
+            color: sending || !enabled ? t.surfaceHigher : null,
+            borderRadius: const BorderRadius.all(NexusRadius.md),
+            boxShadow: sending || !enabled
+                ? null
+                : const [
+                    BoxShadow(
+                      color: NexusColors.crimsonGlow,
+                      blurRadius: 16,
+                      spreadRadius: -4,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+          ),
+          child: stopping
+              ? Center(
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(t.textMuted),
+                    ),
                   ),
-                ],
-        ),
-        child: stopping
-            ? Center(
-                child: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(t.textMuted),
-                  ),
+                )
+              : Icon(
+                  sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+                  color: sending
+                      ? t.textPrimary
+                      : enabled
+                          ? Colors.white
+                          : t.textMuted,
+                  size: 18,
                 ),
-              )
-            : Icon(
-                sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                color: sending
-                    ? t.textPrimary
-                    : enabled
-                        ? Colors.white
-                        : t.textMuted,
-                size: 18,
-              ),
+        ),
       ),
     );
   }

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../core/pretty_json.dart';
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import 'chat_models.dart';
 
 /// Human-in-the-loop card rendered inside the assistant bubble: the tool
@@ -26,9 +27,11 @@ class ApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final pending = approval.isPending;
     final expires = approval.expiresAt;
+    final locale = Localizations.localeOf(context).toString();
     return Container(
       padding: const EdgeInsets.all(NexusSpacing.md),
       decoration: BoxDecoration(
@@ -46,22 +49,20 @@ class ApprovalCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  pending ? 'Approval required' : _staleTitle(approval.status),
+                  pending ? l10n.approvalRequired : _staleTitle(l10n, approval.status),
                   style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w800),
                 ),
               ),
               if (pending && expires != null)
                 Text(
-                  'until ${DateFormat.jm().format(expires.toLocal())}',
+                  l10n.approvalUntil(DateFormat.jm(locale).format(expires.toLocal())),
                   style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            pending
-                ? 'NexusBot wants to run the following before it can continue.'
-                : 'This request can no longer be answered.',
+            pending ? l10n.approvalPendingBody : l10n.approvalStaleBody,
             style: TextStyle(color: t.textSecondary, fontSize: 12),
           ),
           for (final call in approval.toolCalls) ...[
@@ -77,7 +78,7 @@ class ApprovalCard extends StatelessWidget {
                   onPressed:
                       busy || onDecision == null ? null : () => onDecision!(ApprovalDecision.deny),
                   icon: const Icon(Icons.block_rounded, size: 16),
-                  label: const Text('Deny'),
+                  label: Text(l10n.approvalDeny),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: t.textPrimary,
                     side: BorderSide(color: t.border),
@@ -98,7 +99,7 @@ class ApprovalCard extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
                       : const Icon(Icons.check_rounded, size: 16),
-                  label: const Text('Approve'),
+                  label: Text(l10n.approvalApprove),
                   style: FilledButton.styleFrom(
                     backgroundColor: NexusColors.crimson,
                     shape: const RoundedRectangleBorder(
@@ -114,11 +115,11 @@ class ApprovalCard extends StatelessWidget {
     );
   }
 
-  static String _staleTitle(String status) => switch (status) {
-        'expired' => 'Approval expired',
-        'approved' => 'Approved',
-        'denied' => 'Denied',
-        _ => 'Approval already resolved',
+  static String _staleTitle(AppLocalizations l10n, String status) => switch (status) {
+        'expired' => l10n.approvalExpired,
+        'approved' => l10n.approvalApproved,
+        'denied' => l10n.approvalDenied,
+        _ => l10n.approvalResolved,
       };
 }
 
@@ -161,6 +162,7 @@ class _ApprovalToolTile extends StatelessWidget {
             const SizedBox(height: 6),
             SelectableText(
               input,
+              textDirection: TextDirection.ltr,
               style: GoogleFonts.jetBrainsMono(color: t.textPrimary, fontSize: 11.5, height: 1.45),
             ),
           ],

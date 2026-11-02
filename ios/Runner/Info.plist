@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Nexusbot</string>
+	<string>NexusBot</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -56,5 +56,7 @@
 	<string>NexusBot lets you photograph something to ask the assistant about it.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>NexusBot lets you attach photos to your messages.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>NexusBot can lock itself and unlock with Face ID.</string>
 </dict>
 </plist>

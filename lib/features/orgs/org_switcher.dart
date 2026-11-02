@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/preferences.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../auth/auth_providers.dart';
 import 'org_model.dart';
 import 'orgs_repository.dart';
@@ -59,7 +60,7 @@ class _OrgSwitcherState extends ConsumerState<OrgSwitcher> {
       if (!mounted) return;
       await _switchTo(org);
     } catch (e) {
-      _toast(errorText(e));
+      if (mounted) _toast(context.describeError(e));
     }
   }
 
@@ -70,18 +71,23 @@ class _OrgSwitcherState extends ConsumerState<OrgSwitcher> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final orgs = ref.watch(orgListProvider).valueOrNull ?? const <Org>[];
     final active = ref.watch(activeOrgProvider).valueOrNull;
-    final label = active == null ? 'Workspace' : (active.isPersonal ? 'Personal' : active.name);
-    final caption = active == null
-        ? 'Loading…'
+    final label = active == null
+        ? l10n.orgWorkspace
         : active.isPersonal
-            ? 'Your workspace'
-            : '${active.role.label} · ${active.memberCount} member${active.memberCount == 1 ? '' : 's'}';
+            ? l10n.orgPersonal
+            : active.name;
+    final caption = active == null
+        ? l10n.commonLoading
+        : active.isPersonal
+            ? l10n.orgYourWorkspace
+            : l10n.orgRoleMembers(active.role.localized(l10n), active.memberCount);
 
     return PopupMenuButton<String>(
-      tooltip: 'Switch workspace',
+      tooltip: l10n.orgSwitchTooltip,
       onSelected: (v) {
         if (v == _create) {
           _createOrg();
@@ -99,24 +105,24 @@ class _OrgSwitcherState extends ConsumerState<OrgSwitcher> {
             child: _OrgRow(org: org, selected: org.id == active?.id),
           ),
         const PopupMenuDivider(),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _create,
           child: Row(
             children: [
-              Icon(Icons.add_rounded, size: 16),
-              SizedBox(width: NexusSpacing.sm),
-              Text('Create organization…'),
+              const Icon(Icons.add_rounded, size: 16),
+              const SizedBox(width: NexusSpacing.sm),
+              Text(l10n.orgCreateOrganization),
             ],
           ),
         ),
         if (active != null && active.canManage)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: _settings,
             child: Row(
               children: [
-                Icon(Icons.manage_accounts_rounded, size: 16),
-                SizedBox(width: NexusSpacing.sm),
-                Text('Workspace settings'),
+                const Icon(Icons.manage_accounts_rounded, size: 16),
+                const SizedBox(width: NexusSpacing.sm),
+                Text(l10n.orgWorkspaceSettings),
               ],
             ),
           ),
@@ -174,6 +180,7 @@ class _OrgRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Row(
       children: [
@@ -189,7 +196,7 @@ class _OrgRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                org.isPersonal ? 'Personal' : org.name,
+                org.isPersonal ? l10n.orgPersonal : org.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -199,7 +206,7 @@ class _OrgRow extends StatelessWidget {
                 ),
               ),
               Text(
-                org.isPersonal ? 'Your workspace' : org.role.label,
+                org.isPersonal ? l10n.orgYourWorkspace : org.role.localized(l10n),
                 style: TextStyle(color: t.textMuted, fontSize: 11),
               ),
             ],
@@ -232,7 +239,7 @@ class _CreateOrgDialogState extends State<_CreateOrgDialog> {
   void _submit() {
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Give the organization a name');
+      setState(() => _error = context.l10n.orgNameRequired);
       return;
     }
     Navigator.of(context).pop(name);
@@ -240,23 +247,23 @@ class _CreateOrgDialogState extends State<_CreateOrgDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
-      title: const Text('New organization'),
+      title: Text(l10n.orgNewOrganizationTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'A shared workspace with its own chats, documents, assistants and budget. '
-            'You become its owner and can invite members by email.',
+            l10n.orgNewOrganizationBody,
             style: TextStyle(color: t.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: NexusSpacing.md),
           TextField(
             controller: _name,
             autofocus: true,
-            decoration: InputDecoration(hintText: 'Organization name', errorText: _error),
+            decoration: InputDecoration(hintText: l10n.orgNameHint, errorText: _error),
             onChanged: (_) {
               if (_error != null) setState(() => _error = null);
             },
@@ -265,11 +272,11 @@ class _CreateOrgDialogState extends State<_CreateOrgDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Create'),
+          child: Text(l10n.commonCreate),
         ),
       ],
     );

@@ -1,0 +1,1368 @@
+{
+  "@@locale": "ar",
+  "appTitle": "NexusBot",
+  "commonCancel": "إلغاء",
+  "commonDelete": "حذف",
+  "commonSave": "حفظ",
+  "commonRetry": "إعادة المحاولة",
+  "commonClose": "إغلاق",
+  "commonRefresh": "تحديث",
+  "commonDone": "تم",
+  "commonApply": "تطبيق",
+  "commonAdd": "إضافة",
+  "commonEdit": "تعديل",
+  "commonView": "عرض",
+  "commonRemove": "إزالة",
+  "commonCreate": "إنشاء",
+  "commonSettings": "الإعدادات",
+  "commonCopy": "نسخ",
+  "commonCopied": "تم النسخ",
+  "commonMore": "المزيد",
+  "commonLoading": "جارٍ التحميل…",
+  "commonNone": "لا شيء",
+  "commonAll": "الكل",
+  "commonSend": "إرسال",
+  "commonUntitled": "بدون عنوان",
+  "errorNetwork": "تعذّر الوصول إلى الخادم — تحقّق من اتصالك.",
+  "errorTimeout": "استغرق الخادم وقتًا طويلًا للرد.",
+  "errorCancelled": "أُلغي الطلب.",
+  "errorRequestFailed": "فشل الطلب ({status})",
+  "@errorRequestFailed": {
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "errorWithReference": "{message} (المرجع {reference})",
+  "@errorWithReference": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "reference": {
+        "type": "String"
+      }
+    }
+  },
+  "splashLoading": "محرّك الذكاء الاصطناعي · جارٍ التحميل",
+  "loginWelcomeBack": "مرحبًا بعودتك",
+  "authEmailHint": "البريد الإلكتروني",
+  "authPasswordHint": "كلمة المرور",
+  "authEmailRequired": "البريد الإلكتروني مطلوب",
+  "authEmailInvalid": "بريد إلكتروني غير صالح",
+  "authPasswordTooShort": "يجب أن تتكوّن كلمة المرور من 8 أحرف على الأقل",
+  "loginSignIn": "تسجيل الدخول",
+  "loginNewPrompt": "جديد في NexusBot؟ ",
+  "loginCreateAccount": "إنشاء حساب",
+  "authLegalNotice": "بالمتابعة فإنك توافق على",
+  "authLegalLink": "الشروط وسياسة الخصوصية",
+  "registerCreateAccount": "إنشاء حساب",
+  "registerFullNameHint": "الاسم الكامل (اختياري)",
+  "registerPasswordHint": "كلمة المرور (8 أحرف على الأقل)",
+  "registerSubmit": "إنشاء الحساب",
+  "registerHavePrompt": "لديك حساب بالفعل؟ ",
+  "registerSignIn": "تسجيل الدخول",
+  "authBack": "رجوع",
+  "homeWelcomeTitle": "مرحبًا بك في NexusBot",
+  "homeWelcomeSubtitle": "ابدأ محادثة، أو ارفع مستندات للتحدّث عنها، أو فعّل الأدوات ليقوم الذكاء الاصطناعي بإجراءات.",
+  "homeStartNewChat": "بدء محادثة جديدة",
+  "offlineBannerTitle": "أنت غير متصل",
+  "offlineBannerBody": "{count, plural, =0{تُعرض المحادثات المحفوظة؛ ستُرسل الرسائل الجديدة عند عودة الاتصال.} =1{رسالة واحدة بانتظار الإرسال.} =2{رسالتان بانتظار الإرسال.} few{{count} رسائل بانتظار الإرسال.} many{{count} رسالة بانتظار الإرسال.} other{{count} رسالة بانتظار الإرسال.}}",
+  "@offlineBannerBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "offlineBannerFailed": "{count, plural, =1{تعذّر إرسال رسالة واحدة.} =2{تعذّر إرسال رسالتين.} few{تعذّر إرسال {count} رسائل.} many{تعذّر إرسال {count} رسالة.} other{تعذّر إرسال {count} رسالة.}}",
+  "@offlineBannerFailed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "menuOpen": "فتح القائمة",
+  "sidebarNewChat": "محادثة جديدة",
+  "sidebarSearchHint": "البحث في المحادثات والرسائل…",
+  "sidebarChats": "المحادثات",
+  "sidebarNoChats": "لا توجد محادثات بعد",
+  "sidebarDocuments": "المستندات",
+  "sidebarCollections": "المجموعات",
+  "sidebarAssistants": "المساعدون",
+  "sidebarMemory": "الذاكرة",
+  "sidebarSettings": "الإعدادات",
+  "sidebarSignOut": "تسجيل الخروج",
+  "sidebarRename": "إعادة تسمية",
+  "sidebarDeleteChatTitle": "حذف المحادثة؟",
+  "sidebarDeleteChatBody": "ستُحذف “{title}”. لا يمكن التراجع عن ذلك.",
+  "@sidebarDeleteChatBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "sidebarNoTitleMatch": "لا توجد عناوين محادثات مطابقة",
+  "sidebarMessages": "الرسائل",
+  "sidebarNoMessagesMatch": "لا توجد رسائل مطابقة",
+  "sidebarTypeTwoChars": "اكتب حرفين على الأقل",
+  "sidebarRenameChat": "إعادة تسمية المحادثة",
+  "sidebarChatNameHint": "اسم المحادثة",
+  "sidebarCloseMenu": "إغلاق القائمة",
+  "sidebarClearSearch": "مسح البحث",
+  "orgWorkspace": "مساحة العمل",
+  "orgPersonal": "شخصي",
+  "orgYourWorkspace": "مساحة عملك",
+  "orgRoleMembers": "{role} · {count, plural, =1{عضو واحد} =2{عضوان} few{{count} أعضاء} many{{count} عضوًا} other{{count} عضو}}",
+  "@orgRoleMembers": {
+    "placeholders": {
+      "role": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgSwitchTooltip": "تبديل مساحة العمل",
+  "orgCreateOrganization": "إنشاء مؤسسة…",
+  "orgWorkspaceSettings": "إعدادات مساحة العمل",
+  "orgNewOrganizationTitle": "مؤسسة جديدة",
+  "orgNewOrganizationBody": "مساحة عمل مشتركة لها محادثاتها ومستنداتها ومساعدوها وميزانيتها. تصبح مالكها ويمكنك دعوة الأعضاء عبر البريد الإلكتروني.",
+  "orgNameHint": "اسم المؤسسة",
+  "orgNameRequired": "أدخل اسمًا للمؤسسة",
+  "roleOwner": "مالك",
+  "roleAdmin": "مدير",
+  "roleMember": "عضو",
+  "orgRenameTitle": "إعادة تسمية مساحة العمل",
+  "orgRenameHint": "الاسم",
+  "orgMemberAdded": "تمت إضافة {name} بصفة {role}",
+  "@orgMemberAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeaveTitle": "مغادرة مساحة العمل؟",
+  "orgRemoveMemberTitle": "إزالة العضو؟",
+  "orgLeaveBody": "ستفقد الوصول إلى محادثات هذه المساحة ومستنداتها.",
+  "orgRemoveMemberBody": "سيفقد {name} الوصول إلى مساحة العمل هذه.",
+  "@orgRemoveMemberBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeave": "مغادرة",
+  "orgPersonalWorkspace": "مساحة العمل الشخصية",
+  "orgLoadFailed": "تعذّر تحميل مساحة العمل",
+  "sectionBudget": "الميزانية",
+  "orgSpendingPerMonth": "الإنفاق شهريًا",
+  "orgNoLimit": "بلا حدّ",
+  "orgTokensPerMonth": "الرموز شهريًا",
+  "orgUsageReport": "تقرير الاستخدام",
+  "orgUsageReportValue": "حسب العضو أو النموذج أو اليوم",
+  "sectionModels": "النماذج",
+  "orgAllowedModels": "النماذج المسموح بها",
+  "sectionTools": "الأدوات",
+  "orgMcpServers": "خوادم MCP",
+  "orgMcpValueAdmin": "خوادم أدوات خارجية (Model Context Protocol)",
+  "orgMcpValueMember": "يمكن للمالكين والمديرين فقط إدارة خوادم MCP",
+  "orgInvite": "دعوة",
+  "orgAllModels": "كل النماذج",
+  "orgModelsCount": "{count} نماذج",
+  "@orgModelsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgPlanLine": "خطة {plan} · {count, plural, =1{عضو واحد} =2{عضوان} few{{count} أعضاء} many{{count} عضوًا} other{{count} عضو}} · أنت {role}",
+  "@orgPlanLine": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgRenameTooltip": "إعادة تسمية",
+  "sectionMembers": "الأعضاء",
+  "orgNoMembers": "لا يوجد أعضاء",
+  "orgInviteOnlyAdmins": "يمكن للمالكين والمديرين فقط دعوة الأعضاء أو تغيير الأدوار.",
+  "orgYou": "(أنت)",
+  "orgMakeAdmin": "تعيين كمدير",
+  "orgMakeMember": "تعيين كعضو",
+  "orgLeaveWorkspace": "مغادرة مساحة العمل",
+  "orgBudgetInvalid": "أدخل رقمًا موجبًا، أو اترك الحقل فارغًا لعدم التحديد",
+  "orgMonthlyBudget": "الميزانية الشهرية",
+  "orgBudgetBody": "عند استنفاد الميزانية، لا يمكن للأعضاء بدء جولات جديدة حتى بداية الشهر التالي. اترك الحقل فارغًا لعدم التحديد.",
+  "orgSpendingUsdHint": "الإنفاق (دولار)",
+  "orgTokensHint": "الرموز",
+  "orgAllModelsSubtitle": "يمكن للأعضاء اختيار أي نموذج يوفّره الخادم.",
+  "orgInviteEmailRequired": "أدخل البريد الإلكتروني للعضو",
+  "orgInviteNotFound": "لا يوجد حساب NexusBot بهذا البريد — اطلب منهم التسجيل أولًا.",
+  "orgInviteConflict": "هذا الشخص عضو بالفعل في مساحة العمل هذه.",
+  "orgInviteTitle": "دعوة عضو",
+  "orgInviteBody": "يحتاج الشخص إلى حساب NexusBot بهذا البريد الإلكتروني.",
+  "orgInviteEmailHint": "name@company.com",
+  "orgRole": "الدور",
+  "orgInviting": "جارٍ الدعوة…",
+  "usageYou": "أنت",
+  "usageWorkspace": "مساحة العمل",
+  "usageSpendingBudget": "ميزانية الإنفاق",
+  "usageTokenBudget": "ميزانية الرموز",
+  "usageOf": "{used} من {budget}",
+  "@usageOf": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageNoBudget": "لا توجد ميزانية شهرية لمساحة العمل هذه.",
+  "usageTokens": "رمز",
+  "usageCost": "التكلفة",
+  "usageMessages": "رسالة",
+  "usageMeterUnknown": "الاستخدام · —",
+  "usageThisMonth": "الاستخدام هذا الشهر",
+  "usageMeterRatio": "{used} / {budget}",
+  "@usageMeterRatio": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterTokens": "{used} / {budget} رمز",
+  "@usageMeterTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterPlain": "{tokens} رمز · {cost}",
+  "@usageMeterPlain": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaTitle": "استُنفدت الميزانية الشهرية",
+  "quotaResets": "تُعاد في {when}",
+  "@quotaResets": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresUsd": "أُنفق {used} من {budget}",
+  "@quotaFiguresUsd": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresTokens": "استُخدم {used} من {budget} رمز",
+  "@quotaFiguresTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMetricCost": "التكلفة",
+  "usageMetricTokens": "الرموز",
+  "usageMetricMessages": "الرسائل",
+  "usageGroupUser": "المستخدم",
+  "usageGroupModel": "النموذج",
+  "usageGroupDay": "اليوم",
+  "usageGroupOrg": "المؤسسة",
+  "usageNoUsage": "لا يوجد استخدام في هذه الفترة.",
+  "usageBarCaption": "{tokens} رمز · {cost} · {count, plural, =1{رسالة واحدة} =2{رسالتان} few{{count} رسائل} many{{count} رسالة} other{{count} رسالة}}",
+  "@usageBarCaption": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "usageReportServer": "استخدام الخادم",
+  "usageReportTitle": "تقرير الاستخدام",
+  "usageReportPersonal": "الاستخدام الشخصي",
+  "usageReportOrg": "{name} · الاستخدام",
+  "@usageReportOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOnlyTitle": "للمديرين فقط",
+  "usageAdminOnlyBody": "هذا التقرير متاح لمديري الخادم فقط.",
+  "usageThisMonthChip": "هذا الشهر",
+  "usageLast30": "آخر 30 يومًا",
+  "usageCustom": "مخصّص…",
+  "usageGroupBy": "تجميع حسب",
+  "usageBy": "حسب {group}",
+  "@usageBy": {
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "usageRange": "{from} – {to}",
+  "@usageRange": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTitleFallback": "محادثة",
+  "chatSessionModelTooltip": "نموذج الجلسة",
+  "chatActionsTooltip": "إجراءات المحادثة",
+  "chatExportMarkdown": "تصدير بصيغة Markdown",
+  "chatExportJson": "تصدير بصيغة JSON",
+  "chatCopyAsText": "نسخ كنص عادي",
+  "chatShareLink": "رابط مشاركة…",
+  "chatExported": "تم تصدير {filename}",
+  "@chatExported": {
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
+  },
+  "chatCopiedToClipboard": "تم النسخ إلى الحافظة",
+  "chatPickerFailed": "تعذّر فتح المنتقي: {error}",
+  "@chatPickerFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeAll": "المعرفة · الكل",
+  "chatKnowledgeNone": "المعرفة · لا شيء",
+  "chatKnowledgeOne": "المعرفة · {name}",
+  "@chatKnowledgeOne": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeCount": "المعرفة · {count, plural, =1{مجموعة واحدة} =2{مجموعتان} few{{count} مجموعات} many{{count} مجموعة} other{{count} مجموعة}}",
+  "@chatKnowledgeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatBudgetPaused": "استُنفدت الميزانية الشهرية — الإرسال متوقّف",
+  "chatVisionHint": "{model} لا يستطيع قراءة الصور — اختر نموذجًا يدعم الرؤية",
+  "@chatVisionHint": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatSessionModelEntry": "نموذج الجلسة ({model})",
+  "@chatSessionModelEntry": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatModelNextMessageTooltip": "نموذج الرسالة التالية",
+  "chatAssistantFallback": "مساعد",
+  "chatPlainChat": "محادثة عادية",
+  "chatEmptyTitle": "كيف يمكنني المساعدة اليوم؟",
+  "chatEmptyBody": "اسأل عن أي شيء. أرفق صورًا أو ملفات، أو فعّل RAG لتأسيس الإجابات على مستنداتك، أو اختر مجموعات المعرفة للبحث فيها، أو دع NexusBot يشغّل الأدوات لك.",
+  "chatSuggestSummarize": "تلخيص مستند",
+  "chatSuggestExplainCode": "شرح مقطع برمجي",
+  "chatSuggestDescribePhoto": "وصف صورة",
+  "chatSuggestTranslate": "ترجمة نص",
+  "chatLoadEarlier": "تحميل الرسائل الأقدم",
+  "chatLoadingEarlier": "جارٍ تحميل الرسائل الأقدم…",
+  "chatShowingCached": "تُعرض الرسائل المحفوظة — سيتم التحديث عند توفّر الخادم.",
+  "chatErrorBusy": "لا يزال المساعد يجيب عن رسالة سابقة — انتظر حتى ينتهي.",
+  "chatErrorStaleApproval": "تمت معالجة هذه الموافقة أو انتهت صلاحيتها — تم تحديث المحادثة.",
+  "chatErrorVoiceUnavailable": "الصوت غير متاح على هذا الخادم.",
+  "chatErrorVisionRequired": "{message} النماذج التي تدعم الرؤية: {models}.",
+  "@chatErrorVisionRequired": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "models": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQueuedLabel": "بانتظار الإرسال…",
+  "chatQueuedFailed": "لم تُرسل",
+  "chatRetrySend": "إعادة المحاولة",
+  "chatCancelSend": "إلغاء",
+  "chatVoiceMessagePlaceholder": "🎤 رسالة صوتية…",
+  "msgModelTooltip": "النموذج: {model}",
+  "@msgModelTooltip": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "msgEdit": "تعديل",
+  "msgRegenerate": "إعادة التوليد",
+  "editorHint": "عدّل رسالتك",
+  "editorSaveSend": "حفظ وإرسال",
+  "listenPlay": "تشغيل الرد",
+  "listenStop": "إيقاف",
+  "stoppedLabel": "متوقّف",
+  "composerPaused": "الإرسال متوقّف",
+  "composerHintAttachment": "أضف رسالة عن مرفقك…",
+  "composerHint": "راسل NexusBot…",
+  "composerRag": "RAG",
+  "composerTools": "الأدوات",
+  "composerToolsCount": "الأدوات · {summary}",
+  "@composerToolsCount": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "composerSpeak": "نطق",
+  "composerSendBackground": "إرسال في الخلفية",
+  "composerSendTooltip": "إرسال",
+  "composerStopTooltip": "إيقاف التوليد",
+  "attachTooltip": "إرفاق",
+  "attachModelNoImages": "النموذج المحدّد لا يستطيع قراءة الصور",
+  "attachPhotoLibrary": "مكتبة الصور",
+  "attachTakePhoto": "التقاط صورة",
+  "attachFile": "ملف",
+  "attachFileSubtitle": "PDF أو Word أو نص أو CSV أو JSON أو مقطع صوتي",
+  "composerUploading": "جارٍ الرفع…",
+  "siblingPrev": "النسخة السابقة",
+  "siblingNext": "النسخة التالية",
+  "feedbackRemoveUp": "إزالة الإعجاب",
+  "feedbackGood": "رد جيد",
+  "feedbackRemoveDown": "إزالة عدم الإعجاب",
+  "feedbackBad": "رد سيئ",
+  "memoriesUsed": "{count, plural, =1{استُخدمت ذكرى واحدة} =2{استُخدمت ذكريان} few{استُخدمت {count} ذكريات} many{استُخدمت {count} ذكرى} other{استُخدمت {count} ذكرى}}",
+  "@memoriesUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "approvalRequired": "الموافقة مطلوبة",
+  "approvalUntil": "حتى {time}",
+  "@approvalUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "approvalPendingBody": "يريد NexusBot تنفيذ ما يلي قبل أن يتابع.",
+  "approvalStaleBody": "لم يعد بالإمكان الرد على هذا الطلب.",
+  "approvalDeny": "رفض",
+  "approvalApprove": "موافقة",
+  "approvalExpired": "انتهت صلاحية الموافقة",
+  "approvalApproved": "تمت الموافقة",
+  "approvalDenied": "تم الرفض",
+  "approvalResolved": "تمت معالجة الموافقة مسبقًا",
+  "toolChip": "أداة: {name}",
+  "@toolChip": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "toolInput": "المدخل",
+  "toolError": "خطأ",
+  "toolOutput": "المخرج",
+  "toolDeniedBody": "رُفض استدعاء هذه الأداة.",
+  "toolNoIo": "لم يُسجَّل مدخل أو مخرج.",
+  "toolStatusOk": "ناجح",
+  "toolStatusError": "خطأ",
+  "toolStatusDenied": "مرفوض",
+  "toolStatusUnknown": "غير معروف",
+  "toolLatencyMs": "{ms} م.ث",
+  "@toolLatencyMs": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      }
+    }
+  },
+  "toolLatencyS": "{seconds} ث",
+  "@toolLatencyS": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "codeLabel": "كود",
+  "citationExcerptOnly": "يُعرض المقتطف فقط — المقطع الكامل غير متاح.",
+  "citationEmptyChunk": "(مقطع فارغ)",
+  "citationChunkIndex": "المقطع #{index}",
+  "@citationChunkIndex": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "citationTokens": "{count} رمز",
+  "@citationTokens": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "citationChars": "الأحرف {from}–{to}",
+  "@citationChars": {
+    "placeholders": {
+      "from": {
+        "type": "int"
+      },
+      "to": {
+        "type": "int"
+      }
+    }
+  },
+  "citationOpenDocuments": "فتح في المستندات",
+  "citationMatch": "تطابق {score}%",
+  "@citationMatch": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      }
+    }
+  },
+  "citationMatchKind": "{score}% · {kind}",
+  "@citationMatchKind": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "citationLoadFailed": "تعذّر تحميل المقطع: {error}",
+  "@citationLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toolPickerTitle": "أدوات هذه المحادثة",
+  "toolPickerSubtitle": "اختر ما يمكن للوكيل استخدامه. الأدوات المميّزة بدرع تطلب موافقتك قبل التشغيل.",
+  "toolPickerReset": "إعادة التعيين إلى الافتراضي",
+  "toolApprovalTooltip": "تطلب موافقتك قبل التشغيل",
+  "toolGroupBuiltin": "مدمجة",
+  "toolMcpServer": "خادم MCP",
+  "knowledgeTitle": "معرفة هذه المحادثة",
+  "knowledgeSubtitle": "تستند الإجابات إلى المجموعات المحدّدة. يُحفظ الاختيار كإعداد افتراضي لهذه المحادثة.",
+  "knowledgeAllDocs": "كل المستندات",
+  "knowledgeAllDocsSubtitle": "البحث في كل ما رفعته.",
+  "collectionDocCount": "{count, plural, =1{مستند واحد} =2{مستندان} few{{count} مستندات} many{{count} مستندًا} other{{count} مستند}}",
+  "@collectionDocCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "knowledgeNoCollections": "لا توجد مجموعات بعد — أنشئ واحدة من شاشة المجموعات.",
+  "feedbackTitle": "ما الذي حدث خطأ؟",
+  "feedbackSubtitle": "اختياري — ملاحظة قصيرة تساعد على تحسين الإجابات. يُسجَّل عدم الإعجاب في كل الأحوال.",
+  "feedbackHint": "مثال: تجاهلت الإجابة مستندي",
+  "modelChooseTooltip": "اختيار النموذج",
+  "assistantPickerTitle": "بدء محادثة مع…",
+  "assistantPickerSubtitle": "يأتي المساعد بتعليماته ونموذجه وأدواته ومعرفته.",
+  "assistantPlainChat": "محادثة عادية",
+  "assistantPlainChatSubtitle": "بدون مساعد — نموذجك الافتراضي وإعداداتك",
+  "assistantDefaultBadge": "افتراضي",
+  "assistantMenuTooltip": "مساعد هذه المحادثة",
+  "assistantsTitle": "المساعدون",
+  "assistantsLoadFailed": "تعذّر تحميل المساعدين",
+  "assistantsCreateTitle": "إنشاء مساعد",
+  "assistantsCreateBody": "شخصية لها تعليماتها ونموذجها وأدواتها ومعرفتها، يمكن لأي عضو في مساحة العمل بدء محادثة معها.",
+  "assistantsNew": "مساعد جديد",
+  "assistantDeleteTitle": "حذف المساعد؟",
+  "assistantDeleteBody": "سيُزال “{name}”. تحتفظ المحادثات التي استخدمته بسجلّها.",
+  "@assistantDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantDeleted": "تم حذف “{name}”",
+  "@assistantDeleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantReadOnlyMessage": "يمكن لمنشئ المساعد أو مدير مساحة العمل فقط تغييره.",
+  "assistantHintRag": "RAG",
+  "assistantHintTools": "{count, plural, =1{أداة واحدة} =2{أداتان} few{{count} أدوات} many{{count} أداة} other{{count} أداة}}",
+  "@assistantHintTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantHintMemory": "ذاكرة",
+  "assistantHintReadOnly": "للقراءة فقط",
+  "assistantRemoveDefault": "إزالة الافتراضي",
+  "assistantMakeDefault": "تعيين كافتراضي",
+  "assistantNameRequired": "أدخل اسمًا للمساعد",
+  "assistantCreated": "تم إنشاء “{name}”",
+  "@assistantCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantSaved": "تم حفظ المساعد",
+  "assistantLoadFailed": "تعذّر تحميل المساعد",
+  "assistantReadOnlyBanner": "للقراءة فقط — {message}",
+  "@assistantReadOnlyBanner": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantNameHint": "الاسم",
+  "assistantDescriptionHint": "الوصف (يظهر في المنتقي)",
+  "assistantPromptHint": "تعليمات النظام — من هو المساعد وكيف يجيب",
+  "sectionModel": "النموذج",
+  "assistantModelLabel": "النموذج",
+  "assistantWorkspaceDefault": "افتراضي مساحة العمل",
+  "assistantCustomTemperature": "درجة حرارة مخصّصة",
+  "assistantTemperatureDefault": "افتراضي النموذج — الأقل أكثر تركيزًا، والأعلى أكثر إبداعًا",
+  "sectionKnowledge": "المعرفة",
+  "assistantUseDocuments": "استخدام المستندات (RAG)",
+  "assistantUseDocumentsSubtitle": "تأسيس الإجابات على مستندات مساحة العمل.",
+  "assistantCollectionsLabel": "المجموعات (بدون تحديد = كل المستندات)",
+  "assistantUseTools": "استخدام الأدوات",
+  "assistantUseToolsSubtitle": "السماح للوكيل باستدعاء الأدوات؛ الأدوات ذات الدرع تطلب موافقة.",
+  "assistantNoTools": "لم تُضبط أي أدوات على هذا الخادم.",
+  "sectionBehaviour": "السلوك",
+  "assistantUseMemory": "استخدام الذاكرة",
+  "assistantUseMemorySubtitle": "تذكّر الحقائق والتفضيلات عبر المحادثات (يتطلّب أيضًا إعداد حسابك).",
+  "assistantDefault": "المساعد الافتراضي",
+  "assistantDefaultSubtitle": "محدّد مسبقًا في منتقي المحادثة الجديدة لكل أعضاء مساحة العمل.",
+  "assistantCreateButton": "إنشاء المساعد",
+  "assistantSaveChanges": "حفظ التغييرات",
+  "assistantNewTitle": "مساعد جديد",
+  "assistantDeleteTooltip": "حذف",
+  "attachmentTranscribed": "تم التفريغ",
+  "attachmentAudio": "صوت",
+  "attachmentGenerated": "أنشأته أداة",
+  "attachmentTextExtracted": "تم استخراج النص",
+  "attachmentRemove": "إزالة",
+  "attachmentDownload": "تنزيل",
+  "collectionsTitle": "المجموعات",
+  "collectionsNew": "مجموعة جديدة",
+  "collectionCreated": "تم إنشاء المجموعة “{name}”",
+  "@collectionCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionEdit": "تعديل المجموعة",
+  "collectionDeletedWithDocs": "تم حذف “{name}” ومستنداتها",
+  "@collectionDeletedWithDocs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionDeletedKept": "تم حذف “{name}” — واحتُفظ بمستنداتها",
+  "@collectionDeletedKept": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionsLoadFailed": "تعذّر تحميل المجموعات",
+  "collectionsEmptyTitle": "نظّم مستنداتك في مجموعات",
+  "collectionsEmptyBody": "المجموعات قواعد معرفة: اجمع المستندات المترابطة معًا وقصر أي محادثة على ما تحتاجه فقط.",
+  "collectionsCreateOne": "إنشاء مجموعة",
+  "collectionShowDocuments": "عرض المستندات",
+  "collectionRenameDescribe": "إعادة تسمية / وصف",
+  "collectionNameRequired": "أدخل اسمًا للمجموعة",
+  "collectionNameHint": "الاسم",
+  "collectionDescriptionHint": "الوصف (اختياري)",
+  "collectionDeleteTitle": "حذف المجموعة؟",
+  "collectionDeleteBody": "ستُزال “{name}”. {count, plural, =1{يبقى مستندها الوحيد} =2{يبقى مستنداها} few{تبقى مستنداتها الـ{count}} many{يبقى مستنداتها الـ{count}} other{يبقى مستنداتها الـ{count}}} في مكتبتك ما لم تحذفها أيضًا.",
+  "@collectionDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionAlsoDeleteDocs": "حذف المستندات أيضًا",
+  "documentsTitle": "المستندات",
+  "documentsAddFromUrl": "إضافة من رابط",
+  "documentsUploadTitle": "رفع “{name}”",
+  "@documentsUploadTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsUpload": "رفع",
+  "documentQueued": "أُضيف المستند إلى قائمة الفهرسة",
+  "documentDuplicate": "“{name}” مرفوع مسبقًا — تُعرض النسخة الموجودة",
+  "@documentDuplicate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMoveTitle": "نقل “{name}”",
+  "@documentsMoveTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMove": "نقل",
+  "documentDeleteTitle": "حذف المستند؟",
+  "documentDeleteBody": "سيُزال “{name}”.",
+  "@documentDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsLoadFailed": "تعذّر تحميل المستندات",
+  "documentsEmptyTitle": "ارفع معرفة إلى NexusBot",
+  "documentsEmptyInCollection": "لا شيء في “{name}” بعد",
+  "@documentsEmptyInCollection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsThisCollection": "هذه المجموعة",
+  "documentsEmptyBody": "PDF أو DOCX أو MD أو TXT أو HTML — أو صفحة ويب عبر رابط. يُقسَّم كل ملف مرفوع إلى مقاطع ويُضمَّن ويصبح جاهزًا لـ RAG.",
+  "documentsEmptyCollectionBody": "ارفع ملفًا أو انقل مستندات إلى هنا من قائمتها.",
+  "documentsUploadFile": "رفع ملف",
+  "documentsUploading": "جارٍ رفع {name}…",
+  "@documentsUploading": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentFrom": "من {host}",
+  "@documentFrom": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "documentMoveToCollection": "نقل إلى مجموعة…",
+  "docStatusPending": "قيد الانتظار",
+  "docStatusIndexing": "جارٍ الفهرسة",
+  "docStatusIndexingPct": "جارٍ الفهرسة {percent}%",
+  "@docStatusIndexingPct": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "docStatusReady": "جاهز",
+  "docStatusFailed": "فشل",
+  "documentsCollectionLabel": "المجموعة",
+  "documentsNoCollection": "بدون مجموعة",
+  "documentsUrlInvalid": "أدخل عنوانًا كاملًا يبدأ بـ http(s)://",
+  "documentsAddFromUrlBody": "يجلب NexusBot الصفحة ويفهرسها كما لو كانت ملفًا مرفوعًا.",
+  "documentsFetching": "جارٍ الجلب…",
+  "mcpDuplicateName": "يوجد خادم بهذا الاسم في مساحة العمل بالفعل.",
+  "mcpAdded": "تمت إضافة “{name}”",
+  "@mcpAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpRemoveTitle": "إزالة الخادم؟",
+  "mcpRemoveBody": "سيختفي “{name}” وأدواته من كل محادثة ومساعد في مساحة العمل هذه.",
+  "@mcpRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTitle": "خوادم MCP",
+  "mcpTitleOrg": "خوادم MCP · {name}",
+  "@mcpTitleOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpLoadFailed": "تعذّر تحميل الخوادم",
+  "mcpEmptyTitle": "لا توجد خوادم MCP بعد",
+  "mcpEmptyBodyAdmin": "سجّل خادم Model Context Protocol من نوع HTTP أو SSE؛ ستظهر أدواته في منتقي الأدوات باسم mcp:<server>:<tool>.",
+  "mcpEmptyBodyMember": "يمكن للمالكين والمديرين فقط تسجيل خوادم MCP.",
+  "mcpAddServer": "إضافة خادم",
+  "mcpIntro": "تُعرض أدوات الخوادم المفعّلة على كل محادثة ومساعد في مساحة العمل. الخوادم المميّزة بدرع تطلب موافقة قبل تشغيل أي أداة.",
+  "mcpHeaders": "{count, plural, =1{ترويسة واحدة} =2{ترويستان} few{{count} ترويسات} many{{count} ترويسة} other{{count} ترويسة}}",
+  "@mcpHeaders": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpEnvVars": "{count, plural, =1{متغيّر بيئة واحد} =2{متغيّرا بيئة} few{{count} متغيّرات بيئة} many{{count} متغيّر بيئة} other{{count} متغيّر بيئة}}",
+  "@mcpEnvVars": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpApprovalTooltip": "تطلب الأدوات موافقة قبل التشغيل",
+  "mcpDisabled": "معطّل",
+  "mcpSecretsStored": "{list} (محفوظة ولا تُعرض أبدًا)",
+  "@mcpSecretsStored": {
+    "placeholders": {
+      "list": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTestConnection": "اختبار الاتصال",
+  "mcpEnabled": "مفعّل",
+  "mcpRequiresApproval": "يتطلّب موافقة",
+  "mcpTest": "اختبار",
+  "mcpNameInvalid": "الاسم: أحرف لاتينية صغيرة وأرقام و\"-\" أو \"_\" (مثل github)",
+  "mcpUrlRequired": "أدخل عنوان الخادم (http:// أو https://)",
+  "mcpCommandRequired": "أدخل الأمر الذي يشغّل الخادم",
+  "mcpAddTitle": "إضافة خادم MCP",
+  "mcpEditTitle": "تعديل “{name}”",
+  "@mcpEditTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpNameHint": "الاسم (slug، مثل github)",
+  "mcpTransport": "النقل",
+  "mcpTransportStdio": "stdio (أمر على خادم الـ API)",
+  "mcpUrlHint": "https://mcp.example.com/sse",
+  "mcpHeadersHint": "الترويسات، واحدة في كل سطر{suffix}\nAuthorization=Bearer …",
+  "@mcpHeadersHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpKeepStored": " (اتركه فارغًا للإبقاء على المحفوظ)",
+  "mcpCommandHint": "الأمر (مثل npx)",
+  "mcpArgsHint": "الوسائط (مفصولة بمسافات، مثل -y @modelcontextprotocol/server-github)",
+  "mcpEnvHint": "متغيّرات البيئة، واحد في كل سطر{suffix}\nGITHUB_TOKEN=…",
+  "@mcpEnvHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpToolsRequireApproval": "تتطلّب الأدوات موافقة",
+  "mcpToolsRequireApprovalSubtitle": "يوقف كل استدعاء الجولة حتى يوافق عليه المستخدم.",
+  "mcpTestTitle": "اختبار “{name}”",
+  "@mcpTestTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnecting": "جارٍ الاتصال…",
+  "mcpNoAnswer": "لم يستجب الخادم",
+  "mcpTestAgain": "إعادة الاختبار",
+  "mcpConnectionFailed": "فشل الاتصال: {error}",
+  "@mcpConnectionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnected": "تم الاتصال خلال {ms} م.ث · {count, plural, =1{أداة واحدة} =2{أداتان} few{{count} أدوات} many{{count} أداة} other{{count} أداة}}",
+  "@mcpConnected": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpNoTools": "لا يوفّر الخادم أي أدوات.",
+  "memoryRememberTitle": "تذكّر شيئًا",
+  "memoryEditTitle": "تعديل الذكرى",
+  "memoryForgotten": "تم النسيان",
+  "memoryForgetAllTitle": "نسيان كل شيء؟",
+  "memoryForgetAllBody": "{count, plural, =1{ستُحذف الذكرى الوحيدة} =2{ستُحذف الذكريان} few{ستُحذف الذكريات الـ{count} كلها} many{ستُحذف الذكريات الـ{count} كلها} other{ستُحذف الذكريات الـ{count} كلها}}. سيبدأ NexusBot التعرّف عليك من جديد عبر المحادثات الجديدة.",
+  "@memoryForgetAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryForgetAll": "نسيان الكل",
+  "memoryTitle": "الذاكرة",
+  "memoryForgetEverything": "نسيان كل شيء",
+  "memoryLoadFailed": "تعذّر تحميل الذكريات",
+  "memoryHeading": "ما يتذكّره NexusBot",
+  "memoryIntro": "الحقائق والتفضيلات والتعليمات الدائمة المستخلصة من محادثاتك (أو المضافة هنا) تُدمج في المحادثات اللاحقة. تشير الردود التي استخدمت ذكريات إلى ذلك أسفل الرسالة.",
+  "memoryEmptyTitle": "لا شيء محفوظ بعد",
+  "memoryEmptyOn": "تحدّث قليلًا، أو أضف شيئًا يجب أن يتذكّره NexusBot.",
+  "memoryEmptyOff": "الذاكرة متوقّفة في حسابك.",
+  "memoryAddOne": "إضافة ذكرى",
+  "memoryAdd": "إضافة ذكرى",
+  "memoryOffBanner": "الذاكرة متوقّفة — لا يُحفظ شيء جديد ولا تُستخدم الذكريات الحالية.",
+  "memoryNeverUsed": "لم تُستخدم",
+  "memoryAdded": "أُضيفت في {date}",
+  "@memoryAdded": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryUsed": "استُخدمت في {date}",
+  "@memoryUsed": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryForget": "نسيان",
+  "memoryImportanceTooltip": "الأهمية {level} من 5",
+  "@memoryImportanceTooltip": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryContentRequired": "اكتب ما يجب أن يتذكّره NexusBot",
+  "memoryContentHint": "مثال: أفضّل الإجابات القصيرة مع أمثلة برمجية",
+  "memoryKind": "النوع",
+  "memoryImportance": "الأهمية",
+  "memoryKindFacts": "حقائق",
+  "memoryKindPreferences": "تفضيلات",
+  "memoryKindInstructions": "تعليمات",
+  "memoryKindFact": "حقيقة",
+  "memoryKindPreference": "تفضيل",
+  "memoryKindInstruction": "تعليمة",
+  "shareExpiry1Day": "يوم واحد",
+  "shareExpiry7Days": "7 أيام",
+  "shareExpiry30Days": "30 يومًا",
+  "shareExpiry1Year": "سنة واحدة",
+  "shareNexusBotChat": "محادثة NexusBot",
+  "shareSheetFailed": "تعذّر فتح نافذة المشاركة: {error}",
+  "@shareSheetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "shareTitle": "مشاركة هذه المحادثة",
+  "shareBody": "يمكن لأي شخص لديه الرابط قراءة المحادثة (رسائل المستخدم والمساعد) حتى تنتهي صلاحيته أو تلغيه.",
+  "shareExpiresIn": "تنتهي الصلاحية خلال",
+  "shareCreating": "جارٍ الإنشاء…",
+  "shareCreateLink": "إنشاء رابط",
+  "shareCreatedNotice": "تم إنشاء الرابط — انسخه الآن، فهو يُعرض مرة واحدة فقط.",
+  "shareSystemShare": "مشاركة…",
+  "shareActiveLinks": "الروابط النشطة",
+  "shareRevokeAll": "إلغاء الكل",
+  "shareNoActive": "لا توجد روابط نشطة.",
+  "shareExpired": "انتهت الصلاحية {when}",
+  "@shareExpired": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareExpires": "تنتهي الصلاحية {when}",
+  "@shareExpires": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareViews": "{count, plural, =1{مشاهدة واحدة} =2{مشاهدتان} few{{count} مشاهدات} many{{count} مشاهدة} other{{count} مشاهدة}}",
+  "@shareViews": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareRevoke": "إلغاء",
+  "voiceHoldOrTap": "اضغط مطوّلًا أو انقر للتحدّث",
+  "voiceRecording": "جارٍ التسجيل — انقر للإرسال",
+  "voiceTranscribing": "جارٍ التفريغ…",
+  "voiceUnavailable": "الإدخال الصوتي غير متاح",
+  "voiceMicDenied": "رُفض الوصول إلى الميكروفون",
+  "voiceStartFailed": "تعذّر بدء التسجيل: {error}",
+  "@voiceStartFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceNothingRecorded": "لم يُسجَّل شيء",
+  "voiceRecordingFailed": "فشل التسجيل: {error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceServerDefault": "افتراضي الخادم",
+  "adminFeedbackTitle": "التقييمات",
+  "adminFeedbackOnly": "التقييمات متاحة لمديري الخادم فقط.",
+  "adminFeedbackLoadFailed": "تعذّر تحميل التقييمات",
+  "adminFeedbackEmptyTitle": "لا توجد تقييمات بعد",
+  "adminFeedbackEmptyBody": "تظهر هنا تقييمات الإعجاب وعدم الإعجاب على الردود.",
+  "adminLoadMore": "تحميل المزيد",
+  "adminCountOf": "{shown} من {total}",
+  "@adminCountOf": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "adminNoComment": "بدون تعليق",
+  "adminThumbsUp": "إعجاب",
+  "adminThumbsDown": "عدم إعجاب",
+  "adminUserSuffix": "المستخدم …{suffix}",
+  "@adminUserSuffix": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOpenChat": "فتح المحادثة",
+  "settingsTitle": "الإعدادات",
+  "settingsSaveModelFailed": "تعذّر حفظ النموذج الافتراضي: {error}",
+  "@settingsSaveModelFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsMemoryUpdateFailed": "تعذّر تحديث الذاكرة: {error}",
+  "@settingsMemoryUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDisplayName": "اسم العرض",
+  "settingsYourName": "اسمك",
+  "settingsDisplayNameUpdated": "تم تحديث اسم العرض",
+  "settingsPasswordChanged": "تم تغيير كلمة المرور. تم تسجيل خروج الأجهزة الأخرى.",
+  "settingsSignOutEverywhereTitle": "تسجيل الخروج من كل الأجهزة؟",
+  "settingsSignOutEverywhereBody": "سيحتاج كل جهاز مسجّل الدخول إلى هذا الحساب إلى تسجيل الدخول مجددًا.",
+  "settingsSignOutEverywhere": "تسجيل الخروج من كل الأجهزة",
+  "settingsDeleteAllChatsTitle": "حذف كل المحادثات؟",
+  "settingsDeleteAllChatsBody": "يحذف هذا كل محادثات حسابك. تُحفظ المستندات.",
+  "settingsDeleteAll": "حذف الكل",
+  "settingsDeletedChats": "{count, plural, =1{تم حذف محادثة واحدة} =2{تم حذف محادثتين} few{تم حذف {count} محادثات} many{تم حذف {count} محادثة} other{تم حذف {count} محادثة}}",
+  "@settingsDeletedChats": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDeleteAccountTitle": "حذف الحساب؟",
+  "settingsDeleteAccountBody": "سيُزال حسابك ومحادثاتك ومستنداتك. لا يمكن التراجع عن ذلك. أدخل كلمة المرور للتأكيد.",
+  "settingsDeleteAccount": "حذف الحساب",
+  "settingsSignedIn": "مسجّل الدخول",
+  "sectionWorkspace": "مساحة العمل",
+  "settingsActiveWorkspace": "مساحة العمل النشطة",
+  "settingsOrgRole": "{name} · {role}",
+  "@settingsOrgRole": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsManageWorkspace": "إدارة مساحة العمل",
+  "settingsManageWorkspaceSubtitle": "الاسم والميزانيات والنماذج المسموح بها والأعضاء.",
+  "settingsUsageReportSubtitle": "الرموز والتكلفة والرسائل حسب العضو أو النموذج أو اليوم.",
+  "settingsAssistantsSubtitle": "شخصيات لبدء المحادثات معها.",
+  "sectionUsage": "الاستخدام",
+  "settingsLoadingUsage": "جارٍ تحميل الاستخدام…",
+  "settingsUsageFailed": "تعذّر تحميل الاستخدام: {error}",
+  "@settingsUsageFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionAppearance": "المظهر",
+  "themeSystem": "النظام",
+  "themeLight": "فاتح",
+  "themeDark": "داكن",
+  "settingsLanguage": "اللغة",
+  "settingsLanguageSystem": "لغة النظام",
+  "sectionChat": "المحادثة",
+  "settingsStream": "بثّ الردود",
+  "settingsStreamSubtitle": "التسليم رمزًا برمز. الإيقاف = انتظار الرد الكامل.",
+  "settingsRag": "استخدام RAG افتراضيًا",
+  "settingsRagSubtitle": "تأسيس الردود على المستندات التي رفعتها.",
+  "settingsTools": "استخدام الأدوات افتراضيًا",
+  "settingsToolsSubtitle": "السماح للوكيل باستدعاء الأدوات (آلة حاسبة، بحث، …) في المحادثات الجديدة.",
+  "settingsMemory": "الذاكرة",
+  "settingsMemorySubtitle": "تذكّر الحقائق والتفضيلات من المحادثات واستخدامها لاحقًا.",
+  "settingsWhatRemembers": "ما يتذكّره NexusBot",
+  "settingsWhatRemembersSubtitle": "مراجعة الذكريات أو تعديلها أو نسيانها.",
+  "settingsTransport": "نقل البث",
+  "settingsTransportSse": "Server-Sent Events",
+  "settingsTransportWs": "WebSocket",
+  "sectionVoice": "الصوت",
+  "settingsSpeakReplies": "نطق الردود",
+  "settingsSpeakRepliesSubtitle": "قراءة كل رد بصوت عالٍ فور وصوله (تحويل النص إلى كلام عبر {provider}).",
+  "@settingsSpeakRepliesSubtitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsVoice": "الصوت",
+  "settingsVoiceInput": "الإدخال الصوتي",
+  "settingsVoiceInputValue": "اضغط مطوّلًا على الميكروفون في محادثة",
+  "settingsLoadingModels": "جارٍ تحميل النماذج من الخادم…",
+  "settingsModelsFailed": "تعذّر تحميل النماذج: {error}",
+  "@settingsModelsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsNoProviders": "لم يُضبط أي مزوّد نماذج على هذا الخادم.",
+  "settingsModelNote": "يُستخدم للمحادثات الجديدة. يمكن لكل محادثة تبديل النموذج من ترويستها، ويمكن للمحرّر تجاوزه لكل رسالة. اسحب لتحديث القائمة.",
+  "modelNoTools": "بدون أدوات",
+  "modelVision": "رؤية",
+  "sectionAdministration": "الإدارة",
+  "settingsServerUsage": "استخدام الخادم",
+  "settingsServerUsageSubtitle": "كل مساحات العمل، حسب المؤسسة أو المستخدم أو النموذج أو اليوم.",
+  "settingsFeedback": "التقييمات",
+  "settingsFeedbackSubtitle": "تقييمات الإعجاب وعدم الإعجاب على الردود.",
+  "sectionConnection": "الاتصال",
+  "settingsApiBaseUrl": "عنوان الـ API",
+  "sectionSecurity": "الأمان",
+  "settingsBiometric": "القفل البيومتري",
+  "settingsBiometricSubtitle": "طلب بصمة الإصبع أو الوجه أو رمز القفل عند فتح التطبيق.",
+  "settingsBiometricUnavailable": "لا يستطيع هذا الجهاز المصادقة بالمقاييس الحيوية أو رمز القفل.",
+  "sectionOffline": "دون اتصال",
+  "settingsClearCache": "مسح المحادثات المحفوظة",
+  "settingsClearCacheSubtitle": "إزالة الجلسات والرسائل المخزّنة على هذا الجهاز للاستخدام دون اتصال.",
+  "settingsCacheCleared": "تمت إزالة المحادثات المحفوظة",
+  "sectionAccount": "الحساب",
+  "settingsNotSet": "غير محدّد",
+  "settingsChangePassword": "تغيير كلمة المرور",
+  "settingsChangePasswordSubtitle": "يسجّل خروج كل الأجهزة الأخرى.",
+  "settingsClearAllChats": "مسح كل المحادثات",
+  "settingsClearAllChatsSubtitle": "إزالة كل جلسات المحادثة.",
+  "settingsSignOut": "تسجيل الخروج",
+  "settingsSignOutEverywhereSubtitle": "إبطال كل الأجهزة المسجّلة الدخول.",
+  "settingsDeleteAccountSubtitle": "إزالة حسابك وبياناتك نهائيًا.",
+  "sectionAbout": "حول",
+  "settingsVersion": "الإصدار",
+  "settingsLegal": "سياسة الخصوصية والشروط",
+  "settingsLegalSubtitle": "كيف تُعامل بياناتك وقواعد الاستخدام.",
+  "settingsLicenses": "تراخيص المصادر المفتوحة",
+  "settingsLicensesSubtitle": "حزم الأطراف الخارجية التي بُني عليها هذا التطبيق.",
+  "settingsFooter": "NexusBot الإصدار {version} · FastAPI · LangChain · Flutter",
+  "@settingsFooter": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsCurrentPassword": "كلمة المرور الحالية",
+  "settingsCurrentPasswordRequired": "أدخل كلمة المرور الحالية",
+  "settingsNewPasswordHint": "كلمة المرور الجديدة (8 أحرف على الأقل)",
+  "settingsRepeatPassword": "أعد كتابة كلمة المرور الجديدة",
+  "settingsPasswordsMismatch": "كلمتا المرور غير متطابقتين",
+  "legalTitle": "الخصوصية والشروط",
+  "legalPrivacyTab": "سياسة الخصوصية",
+  "legalTermsTab": "شروط الخدمة",
+  "legalUpdated": "آخر تحديث {date}",
+  "@legalUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP1": "يخزّن NexusBot المحادثات والمستندات والمرفقات والذكريات التي تنشئها ليتمكّن من الرد عليك وعرضها مجددًا على أجهزتك. تُحفظ على الخادم الذي تتصل به ({baseUrl}) وكذلك، للاستخدام دون اتصال، في ذاكرة مؤقتة على هذا الجهاز.",
+  "@legalPrivacyP1": {
+    "placeholders": {
+      "baseUrl": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP2": "تُرسل رسائلك ومرفقاتك إلى مزوّدي نماذج الذكاء الاصطناعي المضبوطين في الخادم، فقط لتوليد الردود. يمكن لمديري مساحة العمل رؤية أرقام الاستخدام (الرموز، التكلفة، عدد الرسائل) لكن ليس محادثاتك.",
+  "legalPrivacyP3": "يمكنك تصدير أي محادثة أو حذفها، ونسيان الذكريات، وحذف حسابك في أي وقت من الإعدادات. يزيل حذف الحساب بياناتك من الخادم؛ ويزيل مسح المحادثات المحفوظة بياناتك من هذا الجهاز.",
+  "legalPrivacyP4": "لا يحتوي التطبيق على إعلانات ولا أدوات تتبّع. يعمل الإبلاغ الاختياري عن الأعطال فقط عندما يفعّله المشغّل عند البناء.",
+  "legalTermsP1": "استخدم NexusBot بشكل قانوني ومحترم: لا ترفع محتوى لا يحق لك مشاركته، ولا تحاول تعطيل الخدمة، ولا تستخدمه للإضرار بالآخرين.",
+  "legalTermsP2": "تُولَّد الردود بواسطة نماذج ذكاء اصطناعي وقد تكون غير دقيقة. تحقّق من المعلومات المهمة قبل الاعتماد عليها.",
+  "legalTermsP3": "تُقدَّم الخدمة كما هي، دون ضمان. مالكو مساحات العمل مسؤولون عن الأعضاء الذين يدعونهم والميزانيات التي يحدّدونها.",
+  "legalTermsP4": "لديك أسئلة؟ تواصل مع مشغّل الخادم الذي تتصل به.",
+  "shareIntakeTitle": "مشاركة مع NexusBot",
+  "shareIntakeSubtitle": "اختر المحادثة التي تريد الإرسال إليها.",
+  "shareIntakeNewChat": "محادثة جديدة",
+  "shareIntakeFiles": "{count, plural, =1{ملف واحد} =2{ملفان} few{{count} ملفات} many{{count} ملفًا} other{{count} ملف}}",
+  "@shareIntakeFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareIntakeNoChats": "لا توجد محادثات بعد — ابدأ واحدة جديدة.",
+  "shareIntakeAttachFailed": "تعذّر إرفاق {name}",
+  "@shareIntakeAttachFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shareIntakeExisting": "المحادثات الحالية",
+  "lockTitle": "NexusBot مقفل",
+  "lockBody": "افتح ببصمة الإصبع أو الوجه أو رمز قفل الجهاز للمتابعة.",
+  "lockUnlock": "فتح القفل",
+  "lockReason": "فتح قفل NexusBot",
+  "lockFailed": "تعذّر التحقّق — حاول مجددًا.",
+  "lockSignOut": "تسجيل الخروج بدلًا من ذلك",
+  "shortcutHintNewChat": "Ctrl+N"
+}

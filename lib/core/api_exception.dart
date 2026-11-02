@@ -46,6 +46,21 @@ class ApiException implements Exception {
   /// `quota_exceeded`); `details` carries the budget, the usage and `resets_at`.
   bool get isQuotaExceeded => code == 'quota_exceeded';
   bool get isForbidden => code == 'forbidden' || statusCode == 403;
+
+  /// The server was busy with the session's previous turn (`busy`).
+  bool get isBusy => code == 'busy';
+
+  /// Worth retrying later without changing anything: no network, a timeout,
+  /// a server error, a busy session or a plain rate limit. A spent quota,
+  /// an auth failure or a validation error is not.
+  bool get isTransient {
+    if (code == 'network_error' || code == 'timeout') return true;
+    if (isBusy) return true;
+    if (isRateLimited && !isQuotaExceeded) return true;
+    final status = statusCode;
+    return status != null && status >= 500;
+  }
+
   bool get isNotFound => code == 'not_found' || statusCode == 404;
   bool get isConflict => code == 'conflict' || statusCode == 409;
 

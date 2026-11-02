@@ -6,6 +6,7 @@ import '../../core/api_client.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import 'auth_providers.dart';
 import 'auth_repository.dart';
 
@@ -43,7 +44,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ref.invalidate(currentUserProvider);
       if (mounted) context.go(AppRoutes.home);
     } on ApiException catch (e) {
-      setState(() => _error = e.userMessage);
+      if (mounted) setState(() => _error = context.describeError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -51,6 +52,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       body: EmberBackground(
         child: SafeArea(
@@ -64,16 +66,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(
+                      Center(
                         child: Column(
                           children: [
-                            NexusLogo(size: 64),
-                            SizedBox(height: NexusSpacing.lg),
-                            NexusWordmark(fontSize: 28),
-                            SizedBox(height: NexusSpacing.sm),
+                            const NexusLogo(size: 64),
+                            const SizedBox(height: NexusSpacing.lg),
+                            const NexusWordmark(fontSize: 28),
+                            const SizedBox(height: NexusSpacing.sm),
                             Text(
-                              'WELCOME BACK',
-                              style: TextStyle(
+                              l10n.loginWelcomeBack,
+                              style: const TextStyle(
                                 color: NexusColors.crimson,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -89,14 +91,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         autofillHints: const [AutofillHints.email],
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          hintText: 'Email',
-                          prefixIcon: Icon(Icons.mail_outline, size: 20),
+                        decoration: InputDecoration(
+                          hintText: l10n.authEmailHint,
+                          prefixIcon: const Icon(Icons.mail_outline, size: 20),
                         ),
                         validator: (v) {
                           final s = (v ?? '').trim();
-                          if (s.isEmpty) return 'Email required';
-                          if (!s.contains('@')) return 'Invalid email';
+                          if (s.isEmpty) return l10n.authEmailRequired;
+                          if (!s.contains('@')) return l10n.authEmailInvalid;
                           return null;
                         },
                       ),
@@ -108,7 +110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _submit(),
                         decoration: InputDecoration(
-                          hintText: 'Password',
+                          hintText: l10n.authPasswordHint,
                           prefixIcon: const Icon(Icons.lock_outline, size: 20),
                           suffixIcon: IconButton(
                             icon: Icon(
@@ -118,16 +120,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             onPressed: () => setState(() => _obscure = !_obscure),
                           ),
                         ),
-                        validator: (v) =>
-                            (v ?? '').length < 8 ? 'Password must be at least 8 characters' : null,
+                        validator: (v) => (v ?? '').length < 8 ? l10n.authPasswordTooShort : null,
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: NexusSpacing.md),
-                        _ErrorBanner(message: _error!),
+                        AuthErrorBanner(message: _error!),
                       ],
                       const SizedBox(height: NexusSpacing.xl),
                       NexusButton(
-                        label: 'Sign in',
+                        label: l10n.loginSignIn,
                         icon: Icons.arrow_forward_rounded,
                         loading: _loading,
                         onPressed: _loading ? null : _submit,
@@ -137,14 +138,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            'New to NexusBot? ',
+                            l10n.loginNewPrompt,
                             style: TextStyle(color: context.tokens.textSecondary),
                           ),
                           TextButton(
                             onPressed: () => context.go(AppRoutes.register),
-                            child: const Text(
-                              'Create an account',
-                              style: TextStyle(
+                            child: Text(
+                              l10n.loginCreateAccount,
+                              style: const TextStyle(
                                 color: NexusColors.crimson,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -152,6 +153,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: NexusSpacing.sm),
+                      const LegalNoticeLink(),
                     ],
                   ),
                 ),
@@ -164,8 +167,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 }
 
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
+/// "By continuing you agree to the Terms & Privacy Policy" with the link
+/// to `/legal`; shared by the login and register screens.
+class LegalNoticeLink extends StatelessWidget {
+  const LegalNoticeLink({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final t = context.tokens;
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(l10n.authLegalNotice, style: TextStyle(color: t.textMuted, fontSize: 12)),
+        TextButton(
+          onPressed: () => context.push(AppRoutes.legal),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            l10n.authLegalLink,
+            style: TextStyle(
+              color: t.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Inline error banner of the auth forms.
+class AuthErrorBanner extends StatelessWidget {
+  const AuthErrorBanner({super.key, required this.message});
   final String message;
 
   @override

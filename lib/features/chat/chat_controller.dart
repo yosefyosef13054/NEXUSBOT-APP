@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/api_exception.dart';
+import '../../core/connectivity.dart';
 import '../../core/preferences.dart';
+import '../../core/sync.dart';
 import '../attachments/attachment_model.dart';
 import '../attachments/attachments_repository.dart';
 import '../tools/tools_repository.dart';
@@ -14,8 +16,10 @@ import '../usage/usage_repository.dart';
 import '../voice/audio_player_service.dart';
 import '../voice/recorder.dart';
 import '../voice/voice_repository.dart';
+import 'chat_cache.dart';
 import 'chat_models.dart';
 import 'chat_repository.dart';
+import 'send_queue.dart';
 
 /// Live state for a single chat screen.
 class ChatState {
@@ -34,6 +38,10 @@ class ChatState {
     this.pendingAttachments = const [],
     this.uploading = 0,
     this.playingMessageId,
+    this.nextCursor,
+    this.loadingOlder = false,
+    this.fromCache = false,
+    this.loaded = false,
   });
 
   final List<ChatMessage> messages;
@@ -48,7 +56,9 @@ class ChatState {
   final bool switchingBranch;
   final bool useRag;
   final bool useTools;
-  final String? error;
+
+  /// Why the last turn could not run; shown above the composer.
+  final ChatError? error;
 
   /// `GET /sessions/{id}` — carries the session model, assistant and
   /// metadata. Null until loaded (or when the fetch failed; the header then
@@ -77,6 +87,23 @@ class ChatState {
   /// The reply whose spoken version is playing (its `meta.audio`).
   final String? playingMessageId;
 
+  /// Cursor of the history page before the oldest loaded message; null when
+  /// the beginning of the chat is loaded (or unknown).
+  final String? nextCursor;
+
+  /// `GET …/messages?cursor=` is in flight.
+  final bool loadingOlder;
+
+  /// The messages come from the device cache; the network refresh has not
+  /// replaced them yet (or could not — offline).
+  final bool fromCache;
+
+  /// The first load (cache or network) finished.
+  final bool loaded;
+
+  /// Whether older messages can be fetched.
+  bool get hasOlder => nextCursor != null;
+
   ChatState copyWith({
     List<ChatMessage>? messages,
     bool? sending,
@@ -84,7 +111,7 @@ class ChatState {
     bool? switchingBranch,
     bool? useRag,
     bool? useTools,
-    String? error,
+    ChatError? error,
     bool clearError = false,
     ChatSession? session,
     String? modelOverride,
@@ -97,6 +124,11 @@ class ChatState {
     int? uploading,
     String? playingMessageId,
     bool clearPlaying = false,
+    String? nextCursor,
+    bool clearNextCursor = false,
+    bool? loadingOlder,
+    bool? fromCache,
+    bool? loaded,
   }) =>
       ChatState(
         messages: messages ?? this.messages,
@@ -113,6 +145,10 @@ class ChatState {
         pendingAttachments: pendingAttachments ?? this.pendingAttachments,
         uploading: uploading ?? this.uploading,
         playingMessageId: clearPlaying ? null : (playingMessageId ?? this.playingMessageId),
+        nextCursor: clearNextCursor ? null : (nextCursor ?? this.nextCursor),
+        loadingOlder: loadingOlder ?? this.loadingOlder,
+        fromCache: fromCache ?? this.fromCache,
+        loaded: loaded ?? this.loaded,
       );
 
   static const empty = ChatState(messages: [], sending: false);
@@ -217,6 +253,13 @@ class _TurnContext {
 /// turn (`/messages/voice`) is attached like a background send; `audio_chunk`
 /// frames play through the [AudioPlayerService]; a push notification's
 /// generation is attached through [attachToGeneration].
+///
+/// Offline-first: the chat opens from the device cache and refreshes from
+/// the network (cursor pagination for older history, [loadOlder]); a send
+/// that cannot reach the server stays as a queued bubble and is replayed by
+/// the [SendQueue] with the same `Idempotency-Key`; a reconnect
+/// ([reconnectTickProvider]) resyncs the history and re-attaches to a
+/// running generation.
 class ChatController extends StateNotifier<ChatState> {
   ChatController(this._ref, this.sessionId) : super(ChatState.empty) {
     final prefs = _ref.read(prefsProvider);
@@ -225,6 +268,8 @@ class ChatController extends StateNotifier<ChatState> {
       useTools: prefs.toolsByDefault,
       toolNames: _ref.read(sessionPrefsProvider).toolNames(sessionId),
     );
+    _queueSub = _ref.read(sendQueueProvider.notifier).events.listen(_onQueueEvent);
+    _ref.listen<int>(reconnectTickProvider, (_, __) => unawaited(_resync()));
     _initialLoad = _load();
   }
 
@@ -232,11 +277,11 @@ class ChatController extends StateNotifier<ChatState> {
   /// `assistant_message` before finalising the bubble locally.
   static const stopGracePeriod = Duration(seconds: 8);
 
-  static const _staleApprovalMessage =
-      'That approval was already resolved or has expired — the chat was refreshed.';
+  /// Messages per history page (`limit=`).
+  static const pageSize = 50;
 
   /// Text of the optimistic bubble while a voice clip is transcribed.
-  static const voicePlaceholderText = '🎤 Voice message…';
+  static const voicePlaceholderText = ChatMessage.voicePlaceholderText;
 
   static const _uuid = Uuid();
 
@@ -250,18 +295,128 @@ class ChatController extends StateNotifier<ChatState> {
   bool _stopRequested = false;
   late final Future<void> _initialLoad;
   StreamSubscription<bool>? _playerSub;
+  StreamSubscription<SendQueueEvent>? _queueSub;
+
+  // ---- Loading, cache, pagination ----
+
+  String get _scope => _ref.read(cacheScopeProvider);
+  ChatCache get _cache => _ref.read(chatCacheProvider);
+  SendQueue get _queue => _ref.read(sendQueueProvider.notifier);
+
+  /// The queued / failed sends of this chat, as bubbles.
+  List<ChatMessage> _queuedBubbles() => [
+        for (final q in _ref.read(sendQueueProvider).forSession(sessionId)) q.toMessage(),
+      ];
 
   Future<void> _load() async {
+    // Sends persisted by an earlier run must be on screen from the first frame.
+    await _queue.ready;
+    final cached = await _readCache();
+    if (!mounted) return;
+    if (cached != null) {
+      state = state.copyWith(
+        messages: [...cached.messages, ..._queuedBubbles()],
+        nextCursor: cached.nextCursor,
+        clearNextCursor: cached.nextCursor == null,
+        fromCache: true,
+        loaded: true,
+      );
+    }
+
     final ChatRepository repo;
     try {
       repo = await _ref.read(chatRepositoryProvider.future);
-      final history = await repo.loadHistory(sessionId);
+      final page = await repo.loadHistoryPage(sessionId, limit: pageSize);
       if (!mounted) return;
-      state = state.copyWith(messages: history);
+      state = state.copyWith(
+        messages: [...page.items, ..._queuedBubbles()],
+        nextCursor: page.nextCursor,
+        clearNextCursor: page.nextCursor == null,
+        fromCache: false,
+        loaded: true,
+      );
+      _persistCache();
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(error: errorText(e));
+      // With a cached copy on screen the failure is just "offline".
+      if (cached == null) {
+        state = state.copyWith(
+          error: ChatError.exception(e),
+          loaded: true,
+          messages: _queuedBubbles(),
+        );
+      }
       return;
+    }
+    await _loadSession(repo);
+    await _reconcileApprovals(repo);
+    await _attachToActiveGeneration(repo);
+  }
+
+  Future<CachedHistory?> _readCache() async {
+    try {
+      return await _cache.readMessages(_scope, sessionId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Stores the newest persisted messages (never queued or streaming rows).
+  void _persistCache() {
+    if (!mounted) return;
+    unawaited(
+      _cache
+          .writeMessages(_scope, sessionId, state.messages, nextCursor: state.nextCursor)
+          .catchError((Object _) {}),
+    );
+  }
+
+  /// Fetches the page before the oldest loaded message and prepends it.
+  Future<void> loadOlder() async {
+    final cursor = state.nextCursor;
+    if (cursor == null || state.loadingOlder) return;
+    state = state.copyWith(loadingOlder: true);
+    try {
+      final repo = await _ref.read(chatRepositoryProvider.future);
+      final page = await repo.loadHistoryPage(sessionId, cursor: cursor, limit: pageSize);
+      if (!mounted) return;
+      final known = {for (final m in state.messages) m.id};
+      final older = [
+        for (final m in page.items)
+          if (!known.contains(m.id)) m,
+      ];
+      state = state.copyWith(
+        messages: [...older, ...state.messages],
+        nextCursor: page.nextCursor,
+        clearNextCursor: page.nextCursor == null,
+        loadingOlder: false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(loadingOlder: false, error: ChatError.exception(e));
+    }
+  }
+
+  /// Back online: refresh the history, the approvals and re-attach to a
+  /// generation that may have run meanwhile. Skipped while a turn streams.
+  Future<void> _resync() async {
+    if (!mounted || state.sending) return;
+    final ChatRepository repo;
+    try {
+      repo = await _ref.read(chatRepositoryProvider.future);
+      final page = await repo.loadHistoryPage(sessionId, limit: pageSize);
+      if (!mounted || state.sending) return;
+      state = state.copyWith(
+        messages: [...page.items, ..._queuedBubbles()],
+        nextCursor: page.nextCursor,
+        clearNextCursor: page.nextCursor == null,
+        fromCache: false,
+        loaded: true,
+        clearError: true,
+      );
+      _persistCache();
+    } catch (_) {
+      return; // Still unreachable; the next reconnect tries again.
     }
     await _loadSession(repo);
     await _reconcileApprovals(repo);
@@ -385,6 +540,70 @@ class ChatController extends StateNotifier<ChatState> {
   void toggleRag(bool v) => state = state.copyWith(useRag: v);
   void toggleTools(bool v) => state = state.copyWith(useTools: v);
 
+  // ---- Send queue ----
+
+  /// Whether a request can be attempted right now.
+  Future<bool> _isOnline() async {
+    try {
+      return await _ref.read(connectivityServiceProvider).checkOnline();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Parks a send in the queue: the optimistic bubble becomes "queued", the
+  /// streaming placeholder goes away and the composer is free again.
+  Future<void> _enqueueSend(QueuedSend send, {required String placeholderId}) async {
+    _dropEmptyStreaming(placeholderId);
+    final bubble = send.toMessage();
+    if (!_replaceById(bubble.id, (_) => bubble)) {
+      state = state.copyWith(messages: [...state.messages, bubble]);
+    }
+    state = state.copyWith(sending: false, stopping: false, clearError: true);
+    await _queue.enqueue(send);
+  }
+
+  void _onQueueEvent(SendQueueEvent event) {
+    if (!mounted || event.item.sessionId != sessionId) return;
+    final bubbleId = event.item.bubbleId;
+    switch (event) {
+      case SendAccepted(:final accepted):
+        final persisted = accepted.userMessage;
+        _replaceById(
+          bubbleId,
+          (m) => persisted ?? m.copyWith(delivery: MessageDelivery.sent, clearDeliveryError: true),
+        );
+        if (accepted.generationId.isNotEmpty && !state.sending) {
+          unawaited(_attachAccepted(accepted.generationId));
+        }
+      case SendFailed():
+        final bubble = event.item.toMessage();
+        _replaceById(bubbleId, (_) => bubble);
+      case SendCancelled():
+        _dropPendingUser(bubbleId);
+    }
+  }
+
+  Future<void> _attachAccepted(String generationId) async {
+    try {
+      final repo = await _ref.read(chatRepositoryProvider.future);
+      if (!mounted || state.sending) return;
+      await _attach(repo, generationId);
+    } catch (_) {
+      // The next resync picks the reply up from the history.
+    }
+  }
+
+  /// Replays a parked send now (its "Retry" button).
+  Future<void> retryQueued(String bubbleId) => _queue.retry(_keyOf(bubbleId));
+
+  /// Drops a queued / parked send (its "Cancel" button).
+  Future<void> cancelQueued(String bubbleId) => _queue.cancel(_keyOf(bubbleId));
+
+  static String _keyOf(String bubbleId) => bubbleId.startsWith(ChatMessage.pendingUserPrefix)
+      ? bubbleId.substring(ChatMessage.pendingUserPrefix.length)
+      : bubbleId;
+
   // ---- Attachments ----
 
   /// Uploads [bytes] to this session (`POST /sessions/{id}/attachments`) and
@@ -400,7 +619,7 @@ class ChatController extends StateNotifier<ChatState> {
       return attachment;
     } catch (e) {
       if (!mounted) return null;
-      state = state.copyWith(error: errorText(e));
+      state = state.copyWith(error: ChatError.exception(e));
       return null;
     } finally {
       if (mounted) state = state.copyWith(uploading: state.uploading - 1);
@@ -461,7 +680,7 @@ class ChatController extends StateNotifier<ChatState> {
       await _player.play(AudioClip(bytes: content.bytes, mimeType: content.mimeType));
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(clearPlaying: true, error: errorText(e));
+      state = state.copyWith(clearPlaying: true, error: ChatError.exception(e));
     }
   }
 
@@ -505,7 +724,7 @@ class ChatController extends StateNotifier<ChatState> {
       _ref.invalidate(sessionListProvider);
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(error: errorText(e));
+      state = state.copyWith(error: ChatError.exception(e));
     }
   }
 
@@ -524,7 +743,7 @@ class ChatController extends StateNotifier<ChatState> {
       _ref.invalidate(sessionListProvider);
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(error: errorText(e));
+      state = state.copyWith(error: ChatError.exception(e));
     }
   }
 
@@ -545,7 +764,7 @@ class ChatController extends StateNotifier<ChatState> {
       state = state.copyWith(
         collectionIds: previous,
         clearCollectionIds: previous == null,
-        error: errorText(e),
+        error: ChatError.exception(e),
       );
     }
   }
@@ -584,13 +803,16 @@ class ChatController extends StateNotifier<ChatState> {
   /// retry resends the same request options, so the key is reused there.
   static String newIdempotencyKey() => _uuid.v4();
 
+  /// The optimistic bubble of a send; its id carries the send's
+  /// `Idempotency-Key` so a queued replay maps back to it.
   ChatMessage _optimisticUser(
     String content, {
+    required String key,
     String? parentId,
     List<Attachment> attachments = const [],
   }) =>
       ChatMessage(
-        id: '${ChatMessage.pendingUserPrefix}${DateTime.now().microsecondsSinceEpoch}',
+        id: QueuedSend.bubbleIdFor(key),
         sessionId: sessionId,
         role: MessageRole.user,
         content: content,
@@ -610,8 +832,9 @@ class ChatController extends StateNotifier<ChatState> {
     _stopRequested = false;
 
     // Optimistically append the user message + a streaming placeholder.
+    final key = newIdempotencyKey();
     final attachments = state.pendingAttachments;
-    final optimisticUser = _optimisticUser(trimmed, attachments: attachments);
+    final optimisticUser = _optimisticUser(trimmed, key: key, attachments: attachments);
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -625,7 +848,26 @@ class ChatController extends StateNotifier<ChatState> {
     final collectionIds = state.collectionIds;
     final attachmentIds = _pendingAttachmentIds;
     final voiceReply = _voiceReply;
-    final key = newIdempotencyKey();
+    final queued = QueuedSend(
+      key: key,
+      sessionId: sessionId,
+      content: trimmed,
+      createdAt: optimisticUser.createdAt,
+      attachments: attachments,
+      useRag: state.useRag,
+      useTools: state.useTools,
+      toolNames: toolNames,
+      model: model,
+      collectionIds: collectionIds,
+      voiceReply: voiceReply,
+    );
+
+    if (!await _isOnline()) {
+      if (!mounted) return;
+      _consumePendingAttachments();
+      await _enqueueSend(queued, placeholderId: placeholder.id);
+      return;
+    }
 
     try {
       final repo = await _ref.read(chatRepositoryProvider.future);
@@ -677,12 +919,24 @@ class ChatController extends StateNotifier<ChatState> {
       }
     } catch (e) {
       if (!mounted) return;
+      if (_shouldQueue(e)) {
+        // The server was never reached (or never answered): the queue
+        // replays the same key once the connection is back.
+        _consumePendingAttachments();
+        await _enqueueSend(queued, placeholderId: placeholder.id);
+        return;
+      }
       // The uploads stay in the composer so the send can be retried (e.g.
       // after switching to a vision model).
       _dropEmptyStreaming(placeholder.id);
       _failTurn(e);
     }
   }
+
+  /// A transport-level failure before the turn opened (no network, a
+  /// timeout, a server error) goes to the queue; a refusal does not.
+  static bool _shouldQueue(Object e) =>
+      e is ApiException && e.isTransient && !e.isBusy && !e.isRateLimited;
 
   /// Voice mode: `POST /sessions/{id}/messages/voice` transcribes [clip] and
   /// starts the turn in the background (202). The transcript becomes the user
@@ -694,7 +948,8 @@ class ChatController extends StateNotifier<ChatState> {
     if (clip.isEmpty || state.sending) return;
     _stopRequested = false;
 
-    final optimisticUser = _optimisticUser(voicePlaceholderText);
+    final key = newIdempotencyKey();
+    final optimisticUser = _optimisticUser(voicePlaceholderText, key: key);
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -702,7 +957,6 @@ class ChatController extends StateNotifier<ChatState> {
       clearError: true,
       messages: [...state.messages, optimisticUser, placeholder],
     );
-    final key = newIdempotencyKey();
 
     try {
       final voiceRepo = await _ref.read(voiceRepositoryProvider.future);
@@ -781,7 +1035,9 @@ class ChatController extends StateNotifier<ChatState> {
     if (trimmed.isEmpty || state.sending) return;
     _stopRequested = false;
 
-    final optimisticUser = _optimisticUser(trimmed, attachments: state.pendingAttachments);
+    final key = newIdempotencyKey();
+    final attachments = state.pendingAttachments;
+    final optimisticUser = _optimisticUser(trimmed, key: key, attachments: attachments);
     final placeholder = ChatMessage.streamingPlaceholder(sessionId: sessionId);
     state = state.copyWith(
       sending: true,
@@ -789,21 +1045,40 @@ class ChatController extends StateNotifier<ChatState> {
       clearError: true,
       messages: [...state.messages, optimisticUser, placeholder],
     );
-    final key = newIdempotencyKey();
+    final queued = QueuedSend(
+      key: key,
+      sessionId: sessionId,
+      content: trimmed,
+      createdAt: optimisticUser.createdAt,
+      attachments: attachments,
+      useRag: state.useRag,
+      useTools: state.useTools,
+      toolNames: effectiveToolNames,
+      model: state.modelOverride,
+      collectionIds: state.collectionIds,
+      voiceReply: _voiceReply,
+    );
+
+    if (!await _isOnline()) {
+      if (!mounted) return;
+      _consumePendingAttachments();
+      await _enqueueSend(queued, placeholderId: placeholder.id);
+      return;
+    }
 
     try {
       final repo = await _ref.read(chatRepositoryProvider.future);
       final accepted = await repo.sendBackground(
         sessionId: sessionId,
         content: trimmed,
-        useRag: state.useRag,
-        useTools: state.useTools,
-        toolNames: effectiveToolNames,
-        model: state.modelOverride,
-        collectionIds: state.collectionIds,
+        useRag: queued.useRag,
+        useTools: queued.useTools,
+        toolNames: queued.toolNames,
+        model: queued.model,
+        collectionIds: queued.collectionIds,
         idempotencyKey: key,
-        attachmentIds: _pendingAttachmentIds,
-        voiceReply: _voiceReply,
+        attachmentIds: queued.attachmentIds,
+        voiceReply: queued.voiceReply,
       );
       if (!mounted) return;
       _consumePendingAttachments();
@@ -826,6 +1101,11 @@ class ChatController extends StateNotifier<ChatState> {
       );
     } catch (e) {
       if (!mounted) return;
+      if (_shouldQueue(e)) {
+        _consumePendingAttachments();
+        await _enqueueSend(queued, placeholderId: placeholder.id);
+        return;
+      }
       _dropEmptyStreaming(placeholder.id);
       _failTurn(e);
     }
@@ -843,8 +1123,10 @@ class ChatController extends StateNotifier<ChatState> {
 
     final snapshot = state.messages;
     final original = snapshot[i];
+    final key = newIdempotencyKey();
     final optimisticUser = _optimisticUser(
       trimmed,
+      key: key,
       parentId: original.parentId,
       attachments: state.pendingAttachments,
     );
@@ -855,7 +1137,6 @@ class ChatController extends StateNotifier<ChatState> {
       clearError: true,
       messages: [...snapshot.sublist(0, i), optimisticUser, placeholder],
     );
-    final key = newIdempotencyKey();
 
     try {
       final repo = await _ref.read(chatRepositoryProvider.future);
@@ -911,14 +1192,16 @@ class ChatController extends StateNotifier<ChatState> {
       final history = await repo.branch(sessionId, leafMessageId: target.id);
       if (!mounted) return;
       state = state.copyWith(
-        messages: history,
+        messages: [...history, ..._queuedBubbles()],
         switchingBranch: false,
+        clearNextCursor: true,
         session: state.session?.copyWith(activeLeafId: history.lastOrNull?.id),
       );
+      _persistCache();
       await _reconcileApprovals(repo);
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(switchingBranch: false, error: errorText(e));
+      state = state.copyWith(switchingBranch: false, error: ChatError.exception(e));
     }
   }
 
@@ -942,7 +1225,7 @@ class ChatController extends StateNotifier<ChatState> {
         messageId,
         (m) => m.copyWith(feedback: previous, clearFeedback: previous == null),
       );
-      state = state.copyWith(error: errorText(e));
+      state = state.copyWith(error: ChatError.exception(e));
     }
   }
 
@@ -959,7 +1242,7 @@ class ChatController extends StateNotifier<ChatState> {
     } catch (e) {
       if (!mounted) return;
       _replaceById(messageId, (m) => m.copyWith(feedback: previous));
-      state = state.copyWith(error: errorText(e));
+      state = state.copyWith(error: ChatError.exception(e));
     }
   }
 
@@ -1010,7 +1293,7 @@ class ChatController extends StateNotifier<ChatState> {
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && _isStaleApproval(e)) {
-        state = state.copyWith(sending: false, stopping: false, error: _staleApprovalMessage);
+        state = state.copyWith(sending: false, stopping: false, error: ChatError.staleApproval);
         await reload();
         return;
       }
@@ -1040,22 +1323,9 @@ class ChatController extends StateNotifier<ChatState> {
     state = state.copyWith(
       sending: false,
       stopping: false,
-      error: quota == null ? _turnErrorText(e) : null,
+      error: quota == null ? ChatError.exception(e) : null,
       clearError: quota != null,
     );
-  }
-
-  static String _turnErrorText(Object e) {
-    if (e is ApiException) {
-      final visionModels = e.details?['vision_models'];
-      if (visionModels is List && visionModels.isNotEmpty) {
-        return '${e.userMessage} Models with vision: ${visionModels.join(', ')}.';
-      }
-      if (e.details?['code'] == 'voice_unavailable') {
-        return 'Voice is not available on this server.';
-      }
-    }
-    return errorText(e);
   }
 
   static QuotaExceeded? _quotaFrom(Object e) => e is ApiException && e.isQuotaExceeded
@@ -1080,7 +1350,7 @@ class ChatController extends StateNotifier<ChatState> {
         if (_tryResume(ctx, turn)) return;
         _update(ctx, (m) => m.copyWith(streaming: false));
         _ctx = null;
-        state = state.copyWith(sending: false, stopping: false, error: errorText(e));
+        state = state.copyWith(sending: false, stopping: false, error: ChatError.exception(e));
       },
     );
   }
@@ -1141,7 +1411,7 @@ class ChatController extends StateNotifier<ChatState> {
         }
       case UserMessageEvent():
         if (event.generationId != null) ctx.generationId = event.generationId;
-        _upsertUserMessage(event, beforeId: ctx.targetId);
+        _upsertUserMessage(event, beforeId: ctx.targetId, key: ctx.idempotencyKey);
       case ApprovalRequiredEvent(:final approval):
         _update(
           ctx,
@@ -1203,16 +1473,14 @@ class ChatController extends StateNotifier<ChatState> {
         if (ctx.isApprovalContinuation && isStaleApproval) {
           // WebSocket reports 409 / 404 as error frames.
           _ctx = null;
-          state = state.copyWith(sending: false, stopping: false, error: _staleApprovalMessage);
+          state = state.copyWith(sending: false, stopping: false, error: ChatError.staleApproval);
           unawaited(reload());
           return;
         }
         final quota = event.isQuotaExceeded
             ? QuotaExceeded.fromDetails(event.details, message: event.message)
             : null;
-        final text = isBusy
-            ? 'The assistant is still answering a previous message — wait for it to finish.'
-            : message;
+        final error = isBusy ? ChatError.busy : ChatError.message(message);
         if (ctx.isApprovalContinuation) {
           _update(
             ctx,
@@ -1234,7 +1502,7 @@ class ChatController extends StateNotifier<ChatState> {
         state = state.copyWith(
           sending: false,
           stopping: false,
-          error: quota == null ? text : null,
+          error: quota == null ? error : null,
           clearError: quota != null,
         );
       case UsageEvent():
@@ -1257,7 +1525,7 @@ class ChatController extends StateNotifier<ChatState> {
     final msgs = List<ChatMessage>.of(state.messages);
     final user = result.userMessage;
     if (user != null) {
-      final u = msgs.indexWhere((m) => m.isPendingUser);
+      final u = msgs.indexWhere((m) => m.isPendingUser && !m.isQueued);
       if (u >= 0) msgs[u] = user;
     }
     final i = msgs.indexWhere((m) => m.id == placeholderId);
@@ -1326,10 +1594,12 @@ class ChatController extends StateNotifier<ChatState> {
 
   /// Titles are generated server-side after the stream closes; re-fetch the
   /// session list a moment later so the sidebar picks the title up. The
-  /// usage meter is refreshed as well — the turn just spent tokens.
+  /// usage meter is refreshed as well — the turn just spent tokens — and
+  /// the finished turn goes to the device cache.
   void _afterTurn() {
     _ref.read(sessionListRefresherProvider).scheduleRefresh();
     if (_ref.exists(usageMeProvider)) _ref.invalidate(usageMeProvider);
+    _persistCache();
   }
 
   /// Applies [update] to the turn's target bubble (falls back to the last
@@ -1370,12 +1640,15 @@ class ChatController extends StateNotifier<ChatState> {
     }
   }
 
-  /// The persisted `user_message` replaces the optimistic bubble; when there
-  /// is none (an attached generation replaying from its first frame) it
-  /// updates the row with the same id, or is inserted before [beforeId].
-  void _upsertUserMessage(UserMessageEvent event, {required String beforeId}) {
+  /// The persisted `user_message` replaces the optimistic bubble of the same
+  /// send ([key]), else the in-flight optimistic bubble; when there is none
+  /// (an attached generation replaying from its first frame) it updates the
+  /// row with the same id, or is inserted before [beforeId]. Queued bubbles
+  /// of other sends are never touched.
+  void _upsertUserMessage(UserMessageEvent event, {required String beforeId, String? key}) {
     final msgs = List<ChatMessage>.of(state.messages);
-    final pending = msgs.indexWhere((m) => m.isPendingUser);
+    var pending = key == null ? -1 : msgs.indexWhere((m) => m.id == QueuedSend.bubbleIdFor(key));
+    if (pending < 0) pending = msgs.indexWhere((m) => m.isPendingUser && !m.isQueued);
     if (pending >= 0) {
       msgs[pending] = event.toMessage(sessionId, fallbackCreatedAt: msgs[pending].createdAt);
       state = state.copyWith(messages: msgs);
@@ -1419,9 +1692,14 @@ class ChatController extends StateNotifier<ChatState> {
       state = state.copyWith(messages: msgs, sending: false);
       _afterTurn();
       try {
-        final history = await repo.loadHistory(sessionId);
+        final page = await repo.loadHistoryPage(sessionId, limit: pageSize);
         if (!mounted) return;
-        state = state.copyWith(messages: history);
+        state = state.copyWith(
+          messages: [...page.items, ..._queuedBubbles()],
+          nextCursor: page.nextCursor,
+          clearNextCursor: page.nextCursor == null,
+        );
+        _persistCache();
         await _reconcileApprovals(repo);
       } catch (_) {
         // The optimistic swap stands; the next reload shows the siblings.
@@ -1440,6 +1718,7 @@ class ChatController extends StateNotifier<ChatState> {
   void dispose() {
     _stopTimeout?.cancel();
     unawaited(_playerSub?.cancel());
+    unawaited(_queueSub?.cancel());
     unawaited(_closeTurn());
     super.dispose();
   }

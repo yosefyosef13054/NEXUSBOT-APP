@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/paging.dart';
 import '../auth/auth_providers.dart';
+import '../chat/chat_cache.dart';
 import '../orgs/orgs_repository.dart';
 import 'assistant_model.dart';
 
@@ -79,12 +80,23 @@ final assistantsRepositoryProvider = FutureProvider<AssistantsRepository>((ref) 
 });
 
 /// The active organization's assistants, reloaded when the user or the
-/// workspace changes; invalidate after any mutation.
+/// workspace changes; invalidate after any mutation. Cached on the device:
+/// when the server cannot be reached, the last loaded list is used.
 final assistantListProvider = FutureProvider<List<Assistant>>((ref) async {
   ref.watch(currentUserProvider.select((u) => u.valueOrNull?.id));
   ref.watch(activeOrgIdProvider);
+  final scope = ref.watch(cacheScopeProvider);
+  final cache = ref.watch(chatCacheProvider);
   final repo = await ref.watch(assistantsRepositoryProvider.future);
-  return repo.listAll();
+  try {
+    final list = await repo.listAll();
+    await cache.writeAssistants(scope, list);
+    return list;
+  } catch (_) {
+    final cached = await cache.readAssistants(scope);
+    if (cached != null) return cached;
+    rethrow;
+  }
 });
 
 /// The assistant flagged `is_default` (preselected in the new-chat picker).

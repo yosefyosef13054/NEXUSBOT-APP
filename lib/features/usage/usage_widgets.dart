@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import 'usage_model.dart';
 
 /// Settings → USAGE: the user's and the workspace's figures for the period
@@ -12,46 +13,52 @@ class UsageSummaryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final org = summary.org;
     final period = summary.period;
+    final locale = Localizations.localeOf(context).toString();
     return Padding(
       padding: const EdgeInsets.all(NexusSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${DateFormat.MMMd().format(period.start.toLocal())} – '
-            '${DateFormat.MMMd().format(period.end.toLocal())}',
+            l10n.usageRange(
+              DateFormat.MMMd(locale).format(period.start.toLocal()),
+              DateFormat.MMMd(locale).format(period.end.toLocal()),
+            ),
             style: TextStyle(color: t.textMuted, fontSize: 11.5, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: NexusSpacing.md),
-          _BucketRow(label: 'You', bucket: summary.user),
+          _BucketRow(label: l10n.usageYou, bucket: summary.user),
           const SizedBox(height: NexusSpacing.md),
-          _BucketRow(label: 'Workspace', bucket: org.usage),
+          _BucketRow(label: l10n.usageWorkspace, bucket: org.usage),
           if (org.budgetUsdPerMonth != null) ...[
             const SizedBox(height: NexusSpacing.lg),
             BudgetBar(
-              label: 'Spending budget',
+              label: l10n.usageSpendingBudget,
               fraction: org.usdFraction ?? 0,
-              valueLabel: '${formatUsd(org.usage.costUsd)} of ${formatUsd(org.budgetUsdPerMonth!)}',
+              valueLabel: l10n.usageOf(
+                formatUsd(org.usage.costUsd),
+                formatUsd(org.budgetUsdPerMonth!),
+              ),
             ),
           ],
           if (org.budgetTokensPerMonth != null) ...[
             const SizedBox(height: NexusSpacing.md),
             BudgetBar(
-              label: 'Token budget',
+              label: l10n.usageTokenBudget,
               fraction: org.tokensFraction ?? 0,
-              valueLabel:
-                  '${formatTokens(org.usage.tokens)} of ${formatTokens(org.budgetTokensPerMonth!)}',
+              valueLabel: l10n.usageOf(
+                formatTokens(org.usage.tokens),
+                formatTokens(org.budgetTokensPerMonth!),
+              ),
             ),
           ],
           if (!org.hasBudget) ...[
             const SizedBox(height: NexusSpacing.md),
-            Text(
-              'This workspace has no monthly budget.',
-              style: TextStyle(color: t.textMuted, fontSize: 11.5),
-            ),
+            Text(l10n.usageNoBudget, style: TextStyle(color: t.textMuted, fontSize: 11.5)),
           ],
         ],
       ),
@@ -66,6 +73,7 @@ class _BucketRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Row(
       children: [
@@ -76,9 +84,9 @@ class _BucketRow extends StatelessWidget {
             style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w700),
           ),
         ),
-        Expanded(child: _Stat(value: formatTokens(bucket.tokens), label: 'tokens')),
-        Expanded(child: _Stat(value: formatUsd(bucket.costUsd), label: 'cost')),
-        Expanded(child: _Stat(value: '${bucket.messages}', label: 'messages')),
+        Expanded(child: _Stat(value: formatTokens(bucket.tokens), label: l10n.usageTokens)),
+        Expanded(child: _Stat(value: formatUsd(bucket.costUsd), label: l10n.usageCost)),
+        Expanded(child: _Stat(value: '${bucket.messages}', label: l10n.usageMessages)),
       ],
     );
   }
@@ -178,28 +186,34 @@ class UsageMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final s = summary;
     final Widget body;
     if (s == null) {
-      body = Text('Usage · —', style: TextStyle(color: t.textMuted, fontSize: 10.5));
+      body = Text(l10n.usageMeterUnknown, style: TextStyle(color: t.textMuted, fontSize: 10.5));
     } else {
       final org = s.org;
       final usd = org.usdFraction;
       final tokens = org.tokensFraction;
       if (usd != null && (tokens == null || usd >= tokens)) {
         body = BudgetBar(
-          label: 'Usage this month',
+          label: l10n.usageThisMonth,
           fraction: usd,
-          valueLabel: '${formatUsd(org.usage.costUsd)} / ${formatUsd(org.budgetUsdPerMonth!)}',
+          valueLabel: l10n.usageMeterRatio(
+            formatUsd(org.usage.costUsd),
+            formatUsd(org.budgetUsdPerMonth!),
+          ),
           compact: true,
         );
       } else if (tokens != null) {
         body = BudgetBar(
-          label: 'Usage this month',
+          label: l10n.usageThisMonth,
           fraction: tokens,
-          valueLabel:
-              '${formatTokens(org.usage.tokens)} / ${formatTokens(org.budgetTokensPerMonth!)} tokens',
+          valueLabel: l10n.usageMeterTokens(
+            formatTokens(org.usage.tokens),
+            formatTokens(org.budgetTokensPerMonth!),
+          ),
           compact: true,
         );
       } else {
@@ -207,12 +221,12 @@ class UsageMeter extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Usage this month',
+                l10n.usageThisMonth,
                 style: TextStyle(color: t.textMuted, fontSize: 10.5, fontWeight: FontWeight.w600),
               ),
             ),
             Text(
-              '${formatTokens(s.user.tokens)} tokens · ${formatUsd(s.user.costUsd)}',
+              l10n.usageMeterPlain(formatTokens(s.user.tokens), formatUsd(s.user.costUsd)),
               style: TextStyle(color: t.textPrimary, fontSize: 10.5, fontWeight: FontWeight.w700),
             ),
           ],
@@ -224,11 +238,9 @@ class UsageMeter extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            NexusSpacing.lg,
-            NexusSpacing.sm,
-            NexusSpacing.lg,
-            NexusSpacing.sm,
+          padding: const EdgeInsets.symmetric(
+            horizontal: NexusSpacing.lg,
+            vertical: NexusSpacing.sm,
           ),
           child: body,
         ),
@@ -251,11 +263,28 @@ class QuotaBanner extends StatelessWidget {
   final VoidCallback onRefresh;
   final bool refreshing;
 
+  /// `$10.00 of $10.00 spent` / `1.2M of 1M tokens used`, translated; null
+  /// when the server sent no figures.
+  static String? figuresFor(AppLocalizations l10n, QuotaExceeded quota) {
+    final usd = quota.budgetUsd;
+    if (usd != null) return l10n.quotaFiguresUsd(formatUsd(quota.usedUsd ?? usd), formatUsd(usd));
+    final tokens = quota.budgetTokens;
+    if (tokens != null) {
+      return l10n.quotaFiguresTokens(
+        formatTokens(quota.usedTokens ?? tokens),
+        formatTokens(tokens),
+      );
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final resets = quota.resetsAt;
-    final figures = quota.figures;
+    final figures = figuresFor(l10n, quota);
+    final locale = Localizations.localeOf(context).toString();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: NexusSpacing.md),
@@ -275,7 +304,7 @@ class QuotaBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Monthly budget spent',
+                  l10n.quotaTitle,
                   style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 2),
@@ -283,7 +312,9 @@ class QuotaBanner extends StatelessWidget {
                   [
                     if (figures != null) figures,
                     if (resets != null)
-                      'Resets ${DateFormat.yMMMd().add_jm().format(resets.toLocal())}',
+                      l10n.quotaResets(
+                        DateFormat.yMMMd(locale).add_jm().format(resets.toLocal()),
+                      ),
                     if (figures == null && resets == null) quota.message,
                   ].join(' · '),
                   style: TextStyle(color: t.textSecondary, fontSize: 12),
@@ -301,7 +332,7 @@ class QuotaBanner extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 1.5, color: NexusColors.warn),
                   )
                 : const Icon(Icons.refresh_rounded, size: 16),
-            label: const Text('Refresh'),
+            label: Text(l10n.commonRefresh),
             style: TextButton.styleFrom(foregroundColor: NexusColors.warn),
           ),
         ],
@@ -316,6 +347,7 @@ enum UsageMetric {
   tokens,
   messages;
 
+  /// Untranslated label (see `UsageMetricL10n.localized`).
   String get label => switch (this) {
         UsageMetric.cost => 'Cost',
         UsageMetric.tokens => 'Tokens',
@@ -344,11 +376,12 @@ class UsageBarList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     if (groups.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(NexusSpacing.lg),
-        child: Text('No usage in this range.', style: TextStyle(color: t.textMuted, fontSize: 13)),
+        child: Text(l10n.usageNoUsage, style: TextStyle(color: t.textMuted, fontSize: 13)),
       );
     }
     final max = groups.map((g) => metric.of(g.usage)).fold<double>(0, (a, b) => a > b ? a : b);
@@ -399,8 +432,11 @@ class UsageBarList extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${formatTokens(g.usage.tokens)} tokens · ${formatUsd(g.usage.costUsd)} · '
-                  '${g.usage.messages} message${g.usage.messages == 1 ? '' : 's'}',
+                  l10n.usageBarCaption(
+                    formatTokens(g.usage.tokens),
+                    formatUsd(g.usage.costUsd),
+                    g.usage.messages,
+                  ),
                   style: TextStyle(color: t.textMuted, fontSize: 10.5),
                 ),
               ],

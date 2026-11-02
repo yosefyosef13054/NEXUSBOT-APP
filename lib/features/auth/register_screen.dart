@@ -6,8 +6,10 @@ import '../../core/api_client.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import 'auth_providers.dart';
 import 'auth_repository.dart';
+import 'login_screen.dart' show AuthErrorBanner, LegalNoticeLink;
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -49,7 +51,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       ref.invalidate(currentUserProvider);
       if (mounted) context.go(AppRoutes.home);
     } on ApiException catch (e) {
-      setState(() => _error = e.userMessage);
+      if (mounted) setState(() => _error = context.describeError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -57,9 +59,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
+          tooltip: l10n.authBack,
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.go(AppRoutes.login),
         ),
@@ -76,16 +80,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(
+                      Center(
                         child: Column(
                           children: [
-                            NexusLogo(size: 56),
-                            SizedBox(height: NexusSpacing.lg),
-                            NexusWordmark(fontSize: 24),
-                            SizedBox(height: NexusSpacing.sm),
+                            const NexusLogo(size: 56),
+                            const SizedBox(height: NexusSpacing.lg),
+                            const NexusWordmark(fontSize: 24),
+                            const SizedBox(height: NexusSpacing.sm),
                             Text(
-                              'CREATE ACCOUNT',
-                              style: TextStyle(
+                              l10n.registerCreateAccount,
+                              style: const TextStyle(
                                 color: NexusColors.crimson,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -99,9 +103,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       TextFormField(
                         controller: _name,
                         textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          hintText: 'Full name (optional)',
-                          prefixIcon: Icon(Icons.person_outline, size: 20),
+                        decoration: InputDecoration(
+                          hintText: l10n.registerFullNameHint,
+                          prefixIcon: const Icon(Icons.person_outline, size: 20),
                         ),
                       ),
                       const SizedBox(height: NexusSpacing.md),
@@ -109,14 +113,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         controller: _email,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          hintText: 'Email',
-                          prefixIcon: Icon(Icons.mail_outline, size: 20),
+                        decoration: InputDecoration(
+                          hintText: l10n.authEmailHint,
+                          prefixIcon: const Icon(Icons.mail_outline, size: 20),
                         ),
                         validator: (v) {
                           final s = (v ?? '').trim();
-                          if (s.isEmpty) return 'Email required';
-                          if (!s.contains('@')) return 'Invalid email';
+                          if (s.isEmpty) return l10n.authEmailRequired;
+                          if (!s.contains('@')) return l10n.authEmailInvalid;
                           return null;
                         },
                       ),
@@ -126,20 +130,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         obscureText: true,
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _submit(),
-                        decoration: const InputDecoration(
-                          hintText: 'Password (min 8 chars)',
-                          prefixIcon: Icon(Icons.lock_outline, size: 20),
+                        decoration: InputDecoration(
+                          hintText: l10n.registerPasswordHint,
+                          prefixIcon: const Icon(Icons.lock_outline, size: 20),
                         ),
-                        validator: (v) =>
-                            (v ?? '').length < 8 ? 'Password must be at least 8 characters' : null,
+                        validator: (v) => (v ?? '').length < 8 ? l10n.authPasswordTooShort : null,
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: NexusSpacing.md),
-                        _ErrorBanner(message: _error!),
+                        AuthErrorBanner(message: _error!),
                       ],
                       const SizedBox(height: NexusSpacing.xl),
                       NexusButton(
-                        label: 'Create account',
+                        label: l10n.registerSubmit,
                         icon: Icons.bolt_rounded,
                         loading: _loading,
                         onPressed: _loading ? null : _submit,
@@ -149,14 +152,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            'Already have an account? ',
+                            l10n.registerHavePrompt,
                             style: TextStyle(color: context.tokens.textSecondary),
                           ),
                           TextButton(
                             onPressed: () => context.go(AppRoutes.login),
-                            child: const Text(
-                              'Sign in',
-                              style: TextStyle(
+                            child: Text(
+                              l10n.registerSignIn,
+                              style: const TextStyle(
                                 color: NexusColors.crimson,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -164,6 +167,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: NexusSpacing.sm),
+                      const LegalNoticeLink(),
                     ],
                   ),
                 ),
@@ -171,35 +176,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0x33EF4444),
-        borderRadius: const BorderRadius.all(NexusRadius.md),
-        border: Border.all(color: NexusColors.crimson, width: 1),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: NexusColors.crimson, size: 18),
-          const SizedBox(width: NexusSpacing.sm),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: context.tokens.textPrimary, fontSize: 13),
-            ),
-          ),
-        ],
       ),
     );
   }

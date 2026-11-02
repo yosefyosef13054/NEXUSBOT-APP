@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import 'chat_models.dart';
 
 /// "‹ 2/3 ›" under a message that has edit / regeneration siblings. The
 /// arrows report `-1` / `+1`; the screen resolves the target through
 /// `GET …/siblings` and `POST /sessions/{id}/branch`.
+///
+/// The arrows are logical: "previous" points to the start side, "next" to
+/// the end side, so they mirror under RTL.
 class SiblingSwitcher extends StatelessWidget {
   const SiblingSwitcher({
     super.key,
@@ -24,8 +28,10 @@ class SiblingSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final active = enabled && !busy && onSwitch != null;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
       decoration: BoxDecoration(
@@ -37,8 +43,8 @@ class SiblingSwitcher extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _Arrow(
-            icon: Icons.chevron_left_rounded,
-            tooltip: 'Previous version',
+            icon: rtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
+            tooltip: l10n.siblingPrev,
             onTap: active ? () => onSwitch!(-1) : null,
           ),
           if (busy)
@@ -58,8 +64,8 @@ class SiblingSwitcher extends StatelessWidget {
               ),
             ),
           _Arrow(
-            icon: Icons.chevron_right_rounded,
-            tooltip: 'Next version',
+            icon: rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+            tooltip: l10n.siblingNext,
             onTap: active ? () => onSwitch!(1) : null,
           ),
         ],
@@ -108,6 +114,7 @@ class FeedbackButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final up = feedback?.isUp == true;
     final down = feedback?.isDown == true;
@@ -117,14 +124,14 @@ class FeedbackButtons extends StatelessWidget {
       children: [
         _FeedbackIcon(
           icon: up ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined,
-          tooltip: up ? 'Remove thumbs up' : 'Good reply',
+          tooltip: up ? l10n.feedbackRemoveUp : l10n.feedbackGood,
           color: up ? NexusColors.success : t.textMuted,
           onTap: active ? () => onRate!(1) : null,
         ),
         const SizedBox(width: 2),
         _FeedbackIcon(
           icon: down ? Icons.thumb_down_alt_rounded : Icons.thumb_down_alt_outlined,
-          tooltip: down ? 'Remove thumbs down' : 'Bad reply',
+          tooltip: down ? l10n.feedbackRemoveDown : l10n.feedbackBad,
           color: down ? NexusColors.danger : t.textMuted,
           onTap: active ? () => onRate!(-1) : null,
         ),
@@ -182,7 +189,7 @@ class MemoriesCaption extends StatelessWidget {
             Icon(Icons.psychology_outlined, size: 12, color: t.textMuted),
             const SizedBox(width: 4),
             Text(
-              'Used $count memor${count == 1 ? 'y' : 'ies'}',
+              context.l10n.memoriesUsed(count),
               style: TextStyle(
                 color: t.textMuted,
                 fontSize: 11,

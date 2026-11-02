@@ -5,12 +5,17 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexusbot/core/api_client.dart';
+import 'package:nexusbot/core/connectivity.dart';
+import 'package:nexusbot/core/local_store.dart';
 import 'package:nexusbot/core/preferences.dart';
 import 'package:nexusbot/core/secure_storage.dart';
+import 'package:nexusbot/core/sync.dart';
 import 'package:nexusbot/features/attachments/attachments_repository.dart';
+import 'package:nexusbot/features/chat/chat_cache.dart';
 import 'package:nexusbot/features/chat/chat_controller.dart';
 import 'package:nexusbot/features/chat/chat_models.dart';
 import 'package:nexusbot/features/chat/chat_repository.dart';
+import 'package:nexusbot/features/chat/send_queue.dart';
 import 'package:nexusbot/features/tools/tools_repository.dart';
 import 'package:nexusbot/features/usage/usage_model.dart';
 import 'package:nexusbot/features/usage/usage_repository.dart';
@@ -106,10 +111,33 @@ class FakeChatRepository extends ChatRepository {
   @override
   Future<SendResult> regenerate(String sessionId, {double? temperature}) async => blockingResult!;
 
+  /// `next_cursor` of the newest page (null = the whole chat fits in one).
+  String? nextCursor;
+
+  /// Items of the page before [nextCursor] (`cursor=` requests).
+  List<ChatMessage> olderHistory = [];
+  Object? historyError;
+
+  /// Every `cursor` seen by [loadHistoryPage], in order.
+  final historyPageCalls = <String?>[];
+
+  /// When set, the newest page is not answered until this completes (lets a
+  /// test look at the cached frame first).
+  Completer<void>? historyGate;
+
   @override
-  Future<List<ChatMessage>> loadHistory(String sessionId, {int limit = 100}) async {
+  Future<List<ChatMessage>> loadHistory(String sessionId, {int limit = 100}) async =>
+      (await loadHistoryPage(sessionId, limit: limit)).items;
+
+  @override
+  Future<HistoryPage> loadHistoryPage(String sessionId, {String? cursor, int limit = 50}) async {
     historyCalls++;
-    return history;
+    historyPageCalls.add(cursor);
+    if (cursor == null && historyGate != null) await historyGate!.future;
+    final error = historyError;
+    if (error != null) throw error;
+    if (cursor != null) return HistoryPage(items: olderHistory);
+    return HistoryPage(items: history, nextCursor: nextCursor);
   }
 
   @override
@@ -278,12 +306,12 @@ class FakeChatRepository extends ChatRepository {
     List<String>? attachmentIds,
     VoiceReply? voiceReply,
   }) async {
+    backgroundCalls.add(content);
+    keys.add(idempotencyKey);
     final error = backgroundError;
     if (error != null) throw error;
-    backgroundCalls.add(content);
     lastAttachmentIds = attachmentIds;
     lastVoiceReply = voiceReply;
-    keys.add(idempotencyKey);
     return backgroundResult!;
   }
 
@@ -531,6 +559,8 @@ void main() {
   late FakeVoiceRepository voiceRepo;
   late FakeAudioPlayerService player;
   late FakeContentLoader loader;
+  late ManualConnectivityService connectivity;
+  late MemoryLocalStore store;
   late ProviderContainer container;
 
   Future<void> setUpContainer({
@@ -557,6 +587,8 @@ void main() {
       overrides: [
         // No platform channels: the signed-in user resolves to null.
         tokenStorageProvider.overrideWithValue(MemoryTokenStorage()),
+        localStoreProvider.overrideWithValue(store),
+        connectivityServiceProvider.overrideWithValue(connectivity),
         chatRepositoryProvider.overrideWith((ref) async => repo),
         usageRepositoryProvider.overrideWith((ref) async => usageRepo),
         attachmentsRepositoryProvider.overrideWith((ref) async => attachmentsRepo),
@@ -629,6 +661,8 @@ void main() {
     voiceRepo = FakeVoiceRepository();
     player = FakeAudioPlayerService();
     loader = FakeContentLoader();
+    connectivity = ManualConnectivityService();
+    store = MemoryLocalStore();
   });
 
   test('loads history on creation', () async {
@@ -796,7 +830,7 @@ void main() {
     final turn = await send('hello');
     await emit(turn, const ErrorEvent(message: 'model exploded', code: 'llm_error'));
     expect(state().sending, isFalse);
-    expect(state().error, 'model exploded');
+    expect(state().error?.text, 'model exploded');
     expect(state().messages, hasLength(1), reason: 'empty placeholder removed');
     expect(state().messages.single.role, MessageRole.user);
   });
@@ -808,14 +842,14 @@ void main() {
     await emit(turn, const ErrorEvent(message: 'cut off'));
     expect(state().messages.last.content, 'partial');
     expect(state().messages.last.streaming, isFalse);
-    expect(state().error, 'cut off');
+    expect(state().error?.text, 'cut off');
   });
 
   test('busy error gets a friendly message', () async {
     await setUpContainer();
     final turn = await send('hello');
     await emit(turn, const ErrorEvent(message: 'generation in progress', code: 'busy'));
-    expect(state().error, contains('still answering'));
+    expect(state().error?.text, contains('still answering'));
     expect(state().sending, isFalse);
   });
 
@@ -830,7 +864,7 @@ void main() {
     await controller().send('hello');
     await pumpEventQueue();
     expect(state().sending, isFalse);
-    expect(state().error, 'Too many requests (ref c0ffee12)');
+    expect(state().error?.text, 'Too many requests (ref c0ffee12)');
     expect(state().messages.single.role, MessageRole.user);
   });
 
@@ -1115,7 +1149,7 @@ void main() {
       await controller().resolveApproval('ap1', ApprovalDecision.approve);
       await pumpEventQueue();
       expect(state().sending, isFalse);
-      expect(state().error, 'offline');
+      expect(state().error?.text, 'offline');
       final last = state().messages.last;
       expect(last.approval?.approvalId, 'ap1');
       expect(last.awaitingApproval, isTrue);
@@ -1138,7 +1172,7 @@ void main() {
       await controller().resolveApproval('ap1', ApprovalDecision.approve);
       await pumpEventQueue();
       expect(repo.historyCalls, historyCallsBefore + 1);
-      expect(state().error, contains('refreshed'));
+      expect(state().error?.text, contains('refreshed'));
       expect(state().sending, isFalse);
       expect(state().messages.single.content, 'Resolved elsewhere');
       expect(state().messages.single.approval, isNull);
@@ -1493,7 +1527,7 @@ void main() {
       expect(state().messages.map((m) => m.id), ['u1', 'a1', 'u2', 'a2']);
       expect(state().messages.first.content, 'q');
       expect(state().sending, isFalse);
-      expect(state().error, 'offline');
+      expect(state().error?.text, 'offline');
     });
   });
 
@@ -1543,7 +1577,7 @@ void main() {
       await emit(repo.turn!, const ErrorEvent(message: 'drop again', code: 'network_error'));
       expect(repo.resumeCalls, hasLength(1), reason: 'one reconnect per turn');
       expect(state().sending, isFalse);
-      expect(state().error, 'drop again');
+      expect(state().error?.text, 'drop again');
       expect(state().messages.last.content, 'Hel');
       expect(state().messages.last.streaming, isFalse);
     });
@@ -1568,7 +1602,7 @@ void main() {
           ApiException(code: 'not_found', message: 'generation expired', statusCode: 404);
       await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
       expect(state().sending, isFalse);
-      expect(state().error, 'generation expired');
+      expect(state().error?.text, 'generation expired');
       expect(state().messages.last.content, 'Hel', reason: 'partial text is kept');
       expect(state().messages.last.streaming, isFalse);
     });
@@ -1580,7 +1614,7 @@ void main() {
       await emit(turn, const ErrorEvent(message: 'drop', code: 'network_error'));
       expect(repo.resumeCalls, isEmpty);
       expect(state().sending, isFalse);
-      expect(state().error, 'drop');
+      expect(state().error?.text, 'drop');
     });
 
     test('a WebSocket drop replays from the first frame without doubling the text', () async {
@@ -1682,7 +1716,7 @@ void main() {
       await controller().sendInBackground('later');
       await pumpEventQueue();
       expect(state().sending, isFalse);
-      expect(state().error, 'generation in progress');
+      expect(state().error?.text, 'generation in progress');
       expect(state().messages.single.role, MessageRole.user);
     });
 
@@ -1817,7 +1851,7 @@ void main() {
       repo.feedbackError = ApiException(code: 'network_error', message: 'offline');
       await controller().setFeedback('a1', -1);
       expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reverted');
-      expect(state().error, 'offline');
+      expect(state().error?.text, 'offline');
       await controller().clearFeedback('a1');
       expect(state().messages.last.feedback?.isUp, isTrue, reason: 'reverted again');
     });
@@ -1879,7 +1913,7 @@ void main() {
       expect(att, isNull);
       expect(state().pendingAttachments, isEmpty);
       expect(state().uploading, 0);
-      expect(state().error, 'Type not allowed');
+      expect(state().error?.text, 'Type not allowed');
     });
 
     test('a vision refusal keeps the attachments and names the vision models', () async {
@@ -1897,7 +1931,7 @@ void main() {
       await pumpEventQueue();
       expect(state().sending, isFalse);
       expect(
-        state().error,
+        state().error?.text,
         'Model llama3 cannot read images. Models with vision: gpt-4o, gpt-4o-mini.',
       );
       expect(state().pendingAttachments, hasLength(1), reason: 'retry after switching models');
@@ -2096,7 +2130,7 @@ void main() {
       loader.error = ApiException(code: 'not_found', message: 'gone', statusCode: 404);
       await controller().playMessageAudio(reply);
       expect(state().playingMessageId, isNull);
-      expect(state().error, 'gone');
+      expect(state().error?.text, 'gone');
     });
   });
 
@@ -2189,7 +2223,7 @@ void main() {
       await pumpEventQueue();
       expect(state().sending, isFalse);
       expect(state().messages, isEmpty);
-      expect(state().error, 'Voice is not available on this server.');
+      expect(state().error?.text, 'Voice is not available on this server.');
       expect(repo.resumeCalls, isEmpty);
     });
 
@@ -2267,8 +2301,237 @@ void main() {
       repo.resumeError = ApiException(code: 'network_error', message: 'offline');
       await controller().attachToGeneration('g-x');
       expect(state().sending, isFalse);
-      expect(state().error, 'offline');
+      expect(state().error?.text, 'offline');
       expect(state().messages, hasLength(1), reason: 'empty placeholder dropped');
+    });
+  });
+  // ── Offline-first (phase 4b) ──────────────────────────────────────────
+
+  group('offline-first', () {
+    ChatMessage cachedUser(String id, String content) => ChatMessage(
+          id: id,
+          sessionId: session,
+          role: MessageRole.user,
+          content: content,
+          createdAt: DateTime.utc(2026, 1, 1),
+        );
+
+    test('opens from the cache, then the network replaces it and refreshes the cache', () async {
+      await ChatCache(MemoryLocalStore()).writeMessages('x', 'y', const []); // smoke
+      store = MemoryLocalStore();
+      final cache = ChatCache(store);
+      await cache.writeMessages(
+        'anon:personal',
+        session,
+        [cachedUser('old-1', 'from cache')],
+        nextCursor: '2025-12-31T00:00:00Z',
+      );
+      repo.history = [userMessage('u1', 'fresh')];
+      repo.nextCursor = '2026-01-01T00:00:00Z';
+      repo.historyGate = Completer<void>();
+      await setUpContainer();
+
+      // The network is still pending: the cached copy is on screen.
+      final cachedFrame = state();
+      expect(cachedFrame.fromCache, isTrue);
+      expect(cachedFrame.loaded, isTrue);
+      expect(cachedFrame.messages.single.content, 'from cache');
+      expect(cachedFrame.nextCursor, '2025-12-31T00:00:00Z');
+      expect(repo.historyPageCalls, [null]);
+
+      repo.historyGate!.complete();
+      await pumpEventQueue();
+      expect(state().fromCache, isFalse);
+      expect(state().messages.single.content, 'fresh');
+      expect(state().nextCursor, '2026-01-01T00:00:00Z');
+      expect(state().loaded, isTrue);
+      final stored = await store.read(ChatCache.messagesKey('anon:personal', session));
+      expect((stored!['items'] as List).single['content'], 'fresh');
+    });
+
+    test('a network failure with a cached copy shows the copy without an error', () async {
+      store = MemoryLocalStore();
+      await ChatCache(store).writeMessages('anon:personal', session, [cachedUser('c1', 'kept')]);
+      repo.historyError = ApiException(code: 'network_error', message: 'offline');
+      await setUpContainer();
+      expect(state().messages.single.content, 'kept');
+      expect(state().fromCache, isTrue);
+      expect(state().error, isNull);
+
+      // Without a cache the failure is shown.
+      store = MemoryLocalStore();
+      await setUpContainer();
+      expect(state().messages, isEmpty);
+      expect(state().error?.text, 'offline');
+      expect(state().loaded, isTrue);
+    });
+
+    test('loadOlder fetches the page before the cursor and prepends it', () async {
+      repo.history = [userMessage('u2', 'newer')];
+      repo.nextCursor = 'cursor-1';
+      repo.olderHistory = [userMessage('u1', 'older'), userMessage('u2', 'newer')];
+      await setUpContainer();
+      expect(state().hasOlder, isTrue);
+      await controller().loadOlder();
+      await pumpEventQueue();
+      expect(repo.historyPageCalls, [null, 'cursor-1']);
+      expect(state().messages.map((m) => m.content), ['older', 'newer'], reason: 'deduplicated');
+      expect(state().hasOlder, isFalse);
+      expect(state().loadingOlder, isFalse);
+
+      await controller().loadOlder();
+      expect(repo.historyPageCalls, hasLength(2), reason: 'nothing older to fetch');
+    });
+
+    test('an offline send is queued as a pending bubble and replayed on reconnect', () async {
+      await setUpContainer();
+      connectivity.setOnline(false);
+      await pumpEventQueue();
+      await controller().send('later');
+      await pumpEventQueue();
+
+      expect(state().sending, isFalse, reason: 'the composer is free again');
+      expect(state().error, isNull);
+      final bubble = state().messages.single;
+      expect(bubble.isQueued, isTrue);
+      expect(bubble.delivery, MessageDelivery.queued);
+      expect(bubble.content, 'later');
+      expect(repo.keys, isEmpty, reason: 'the server was never contacted');
+      final queued = container.read(sendQueueProvider).items.single;
+      expect(bubble.id, 'pending-user-${queued.key}');
+      expect(queued.content, 'later');
+      expect((await store.read('sendqueue:anon:personal'))!['items'], hasLength(1));
+
+      // Back online: replayed through /messages/background with the same key,
+      // the bubble becomes the persisted message and the reply is attached.
+      repo.backgroundResult = BackgroundSend(
+        generationId: 'g1',
+        userMessage: userMessage('u-persisted', 'later'),
+      );
+      connectivity.setOnline(true);
+      await pumpEventQueue();
+      expect(repo.backgroundCalls, ['later']);
+      expect(repo.keys, [queued.key]);
+      expect(container.read(sendQueueProvider).isEmpty, isTrue);
+      expect(state().messages.first.id, 'u-persisted');
+      expect(state().messages.first.isQueued, isFalse);
+      expect(repo.resumeCalls.single.generationId, 'g1');
+      expect(state().sending, isTrue);
+      expect(state().messages.last.streaming, isTrue);
+
+      repo.turn!.add(const TokenEvent(token: 'ok'));
+      repo.turn!.add(const AssistantMessageEvent(data: {'id': 'a1', 'content': 'ok'}));
+      await pumpEventQueue();
+      expect(state().sending, isFalse);
+      expect(state().messages.last.content, 'ok');
+    });
+
+    test('a transport failure when opening the stream queues instead of failing', () async {
+      await setUpContainer();
+      repo.openError = ApiException(code: 'network_error', message: 'Connection refused');
+      await controller().send('flaky');
+      await pumpEventQueue();
+      expect(state().error, isNull);
+      expect(state().messages.single.isQueued, isTrue);
+      expect(container.read(sendQueueProvider).items.single.content, 'flaky');
+      // Not a transport problem: still an inline error, nothing queued.
+      repo.openError = ApiException(code: 'validation_error', message: 'Bad', statusCode: 422);
+      await controller().cancelQueued(state().messages.single.id);
+      await pumpEventQueue();
+      expect(state().messages, isEmpty);
+      await controller().send('bad');
+      await pumpEventQueue();
+      expect(state().error?.text, 'Bad');
+      expect(container.read(sendQueueProvider).isEmpty, isTrue);
+    });
+
+    test('a parked send shows its reason; retry replays it, cancel drops it', () async {
+      await setUpContainer();
+      repo.backgroundError =
+          ApiException(code: 'validation_error', message: 'Type not allowed', statusCode: 422);
+      connectivity.setOnline(false);
+      await pumpEventQueue();
+      await controller().send('one');
+      await pumpEventQueue();
+      connectivity.setOnline(true);
+      await pumpEventQueue();
+      final parked = state().messages.single;
+      expect(parked.delivery, MessageDelivery.failed);
+      expect(parked.deliveryError, 'Type not allowed');
+
+      repo.backgroundError = null;
+      repo.backgroundResult = const BackgroundSend(generationId: 'g2');
+      await controller().retryQueued(parked.id);
+      await pumpEventQueue();
+      expect(repo.backgroundCalls, ['one', 'one']);
+      expect(state().messages.first.isQueued, isFalse);
+      expect(repo.resumeCalls.single.generationId, 'g2');
+
+      repo.turn!.add(const AssistantMessageEvent(data: {'id': 'a1', 'content': 'done'}));
+      await pumpEventQueue();
+      connectivity.setOnline(false);
+      await pumpEventQueue();
+      await controller().send('two');
+      await pumpEventQueue();
+      await controller().cancelQueued(state().messages.last.id);
+      await pumpEventQueue();
+      expect(state().messages.where((m) => m.isQueued), isEmpty);
+      expect(container.read(sendQueueProvider).isEmpty, isTrue);
+    });
+
+    test('queued sends persisted by an earlier run are shown when the chat opens', () async {
+      store = MemoryLocalStore();
+      await store.write('sendqueue:anon:personal', {
+        'items': [
+          QueuedSend(
+            key: 'old-key',
+            sessionId: session,
+            content: 'from last time',
+            createdAt: DateTime.utc(2026),
+            failed: true,
+            lastError: 'gave up',
+          ).toJson(),
+          QueuedSend(
+            key: 'other-chat',
+            sessionId: 'other',
+            content: 'elsewhere',
+            createdAt: DateTime.utc(2026),
+            failed: true,
+          ).toJson(),
+        ],
+      });
+      await setUpContainer();
+      final bubble = state().messages.single;
+      expect(bubble.id, 'pending-user-old-key');
+      expect(bubble.content, 'from last time');
+      expect(bubble.delivery, MessageDelivery.failed);
+      expect(bubble.deliveryError, 'gave up');
+    });
+
+    test('a reconnect resyncs the history and re-attaches to a running generation', () async {
+      repo.history = [userMessage('u1', 'before')];
+      await setUpContainer();
+      repo.history = [
+        userMessage('u1', 'before'),
+        assistantFrom({'id': 'a1', 'content': 'reply'}),
+      ];
+      repo.activeGen = const ActiveGeneration(generationId: 'g9', status: 'running');
+      container.read(reconnectTickProvider.notifier).state++;
+      await pumpEventQueue();
+      expect(repo.historyCalls, 2);
+      expect(state().messages.map((m) => m.id), containsAll(['u1', 'a1']));
+      expect(repo.resumeCalls.single.generationId, 'g9');
+      expect(state().sending, isTrue);
+    });
+
+    test('a finished turn is written to the cache', () async {
+      await setUpContainer();
+      final turn = await send('hello');
+      await emit(turn, const AssistantMessageEvent(data: {'id': 'a1', 'content': 'world'}));
+      await pumpEventQueue();
+      final stored = await store.read(ChatCache.messagesKey('anon:personal', session));
+      final items = (stored!['items'] as List).cast<Map>();
+      expect(items.map((m) => m['id']), ['a1'], reason: 'the optimistic bubble is not persisted');
     });
   });
 }

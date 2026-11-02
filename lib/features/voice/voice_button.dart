@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import 'recorder.dart';
 
 /// What the microphone button shows.
@@ -44,6 +45,7 @@ class VoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final enabled = state != VoiceButtonState.disabled && state != VoiceButtonState.processing;
     final recording = state == VoiceButtonState.recording;
@@ -54,10 +56,10 @@ class VoiceButton extends StatelessWidget {
     };
     final label = tooltip ??
         switch (state) {
-          VoiceButtonState.idle => 'Hold or tap to talk',
-          VoiceButtonState.recording => 'Recording — tap to send',
-          VoiceButtonState.processing => 'Transcribing…',
-          VoiceButtonState.disabled => 'Voice input unavailable',
+          VoiceButtonState.idle => l10n.voiceHoldOrTap,
+          VoiceButtonState.recording => l10n.voiceRecording,
+          VoiceButtonState.processing => l10n.voiceTranscribing,
+          VoiceButtonState.disabled => l10n.voiceUnavailable,
         };
     return Tooltip(
       message: label,
@@ -114,7 +116,7 @@ class VoiceButton extends StatelessWidget {
 
 /// Owns the recording lifecycle around a [Recorder]: tap toggles, hold talks.
 /// A finished clip goes to [onClip]; permission and microphone problems go
-/// to [onError].
+/// to [onError] (already translated).
 class PushToTalkButton extends StatefulWidget {
   const PushToTalkButton({
     super.key,
@@ -155,10 +157,11 @@ class _PushToTalkButtonState extends State<PushToTalkButton> {
 
   Future<void> _start() async {
     if (_recording || _busy || !widget.enabled) return;
+    final l10n = context.l10n;
     _busy = true;
     try {
       if (!await widget.recorder.hasPermission()) {
-        widget.onError?.call('Microphone access was denied');
+        widget.onError?.call(l10n.voiceMicDenied);
         return;
       }
       await widget.recorder.start();
@@ -169,7 +172,7 @@ class _PushToTalkButtonState extends State<PushToTalkButton> {
       setState(() => _recording = true);
       _limit = Timer(widget.maxDuration, _finish);
     } catch (e) {
-      widget.onError?.call('Could not start recording: $e');
+      widget.onError?.call(l10n.voiceStartFailed('$e'));
     } finally {
       _busy = false;
     }
@@ -179,18 +182,19 @@ class _PushToTalkButtonState extends State<PushToTalkButton> {
     _limit?.cancel();
     _limit = null;
     if (!_recording || _busy) return;
+    final l10n = context.l10n;
     _busy = true;
     try {
       final clip = await widget.recorder.stop();
       if (mounted) setState(() => _recording = false);
       if (clip == null || clip.isEmpty) {
-        widget.onError?.call('Nothing was recorded');
+        widget.onError?.call(l10n.voiceNothingRecorded);
         return;
       }
       widget.onClip(clip);
     } catch (e) {
       if (mounted) setState(() => _recording = false);
-      widget.onError?.call('Recording failed: $e');
+      widget.onError?.call(l10n.voiceRecordingFailed('$e'));
     } finally {
       _busy = false;
     }

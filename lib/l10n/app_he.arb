@@ -1,0 +1,1368 @@
+{
+  "@@locale": "he",
+  "appTitle": "NexusBot",
+  "commonCancel": "ביטול",
+  "commonDelete": "מחיקה",
+  "commonSave": "שמירה",
+  "commonRetry": "נסו שוב",
+  "commonClose": "סגירה",
+  "commonRefresh": "רענון",
+  "commonDone": "סיום",
+  "commonApply": "החלה",
+  "commonAdd": "הוספה",
+  "commonEdit": "עריכה",
+  "commonView": "הצגה",
+  "commonRemove": "הסרה",
+  "commonCreate": "יצירה",
+  "commonSettings": "הגדרות",
+  "commonCopy": "העתקה",
+  "commonCopied": "הועתק",
+  "commonMore": "עוד",
+  "commonLoading": "טוען…",
+  "commonNone": "ללא",
+  "commonAll": "הכול",
+  "commonSend": "שליחה",
+  "commonUntitled": "ללא שם",
+  "errorNetwork": "אין חיבור לשרת — בדקו את החיבור לרשת.",
+  "errorTimeout": "השרת לא ענה בזמן.",
+  "errorCancelled": "הבקשה בוטלה.",
+  "errorRequestFailed": "הבקשה נכשלה ({status})",
+  "@errorRequestFailed": {
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "errorWithReference": "{message} (מזהה {reference})",
+  "@errorWithReference": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "reference": {
+        "type": "String"
+      }
+    }
+  },
+  "splashLoading": "מנוע AI · טוען",
+  "loginWelcomeBack": "ברוכים השבים",
+  "authEmailHint": "אימייל",
+  "authPasswordHint": "סיסמה",
+  "authEmailRequired": "נדרש אימייל",
+  "authEmailInvalid": "אימייל לא תקין",
+  "authPasswordTooShort": "הסיסמה חייבת להכיל לפחות 8 תווים",
+  "loginSignIn": "כניסה",
+  "loginNewPrompt": "חדשים ב-NexusBot? ",
+  "loginCreateAccount": "יצירת חשבון",
+  "authLegalNotice": "בהמשך השימוש אתם מסכימים ל",
+  "authLegalLink": "תנאי השימוש ומדיניות הפרטיות",
+  "registerCreateAccount": "יצירת חשבון",
+  "registerFullNameHint": "שם מלא (לא חובה)",
+  "registerPasswordHint": "סיסמה (לפחות 8 תווים)",
+  "registerSubmit": "יצירת חשבון",
+  "registerHavePrompt": "כבר יש לכם חשבון? ",
+  "registerSignIn": "כניסה",
+  "authBack": "חזרה",
+  "homeWelcomeTitle": "ברוכים הבאים ל-NexusBot",
+  "homeWelcomeSubtitle": "התחילו שיחה, העלו מסמכים כדי לשוחח עליהם, או הפעילו כלים כדי לתת ל-AI לבצע פעולות.",
+  "homeStartNewChat": "התחלת שיחה חדשה",
+  "offlineBannerTitle": "אין חיבור לאינטרנט",
+  "offlineBannerBody": "{count, plural, =0{מוצגות שיחות שמורות; הודעות חדשות יישלחו כשהחיבור יחזור.} =1{הודעה אחת ממתינה לשליחה.} other{{count} הודעות ממתינות לשליחה.}}",
+  "@offlineBannerBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "offlineBannerFailed": "{count, plural, =1{הודעה אחת לא נשלחה.} other{{count} הודעות לא נשלחו.}}",
+  "@offlineBannerFailed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "menuOpen": "פתיחת התפריט",
+  "sidebarNewChat": "שיחה חדשה",
+  "sidebarSearchHint": "חיפוש בשיחות ובהודעות…",
+  "sidebarChats": "שיחות",
+  "sidebarNoChats": "אין שיחות עדיין",
+  "sidebarDocuments": "מסמכים",
+  "sidebarCollections": "אוספים",
+  "sidebarAssistants": "עוזרים",
+  "sidebarMemory": "זיכרון",
+  "sidebarSettings": "הגדרות",
+  "sidebarSignOut": "יציאה",
+  "sidebarRename": "שינוי שם",
+  "sidebarDeleteChatTitle": "למחוק את השיחה?",
+  "sidebarDeleteChatBody": "“{title}” תימחק. אי אפשר לבטל פעולה זו.",
+  "@sidebarDeleteChatBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "sidebarNoTitleMatch": "אין שיחות עם שם תואם",
+  "sidebarMessages": "הודעות",
+  "sidebarNoMessagesMatch": "אין הודעות תואמות",
+  "sidebarTypeTwoChars": "הקלידו לפחות שני תווים",
+  "sidebarRenameChat": "שינוי שם השיחה",
+  "sidebarChatNameHint": "שם השיחה",
+  "sidebarCloseMenu": "סגירת התפריט",
+  "sidebarClearSearch": "ניקוי החיפוש",
+  "orgWorkspace": "סביבת עבודה",
+  "orgPersonal": "אישי",
+  "orgYourWorkspace": "סביבת העבודה שלכם",
+  "orgRoleMembers": "{role} · {count, plural, =1{חבר אחד} other{{count} חברים}}",
+  "@orgRoleMembers": {
+    "placeholders": {
+      "role": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgSwitchTooltip": "החלפת סביבת עבודה",
+  "orgCreateOrganization": "יצירת ארגון…",
+  "orgWorkspaceSettings": "הגדרות סביבת העבודה",
+  "orgNewOrganizationTitle": "ארגון חדש",
+  "orgNewOrganizationBody": "סביבת עבודה משותפת עם שיחות, מסמכים, עוזרים ותקציב משלה. אתם הופכים לבעלים ויכולים להזמין חברים באימייל.",
+  "orgNameHint": "שם הארגון",
+  "orgNameRequired": "תנו שם לארגון",
+  "roleOwner": "בעלים",
+  "roleAdmin": "מנהל",
+  "roleMember": "חבר",
+  "orgRenameTitle": "שינוי שם סביבת העבודה",
+  "orgRenameHint": "שם",
+  "orgMemberAdded": "{name} נוסף/ה בתור {role}",
+  "@orgMemberAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeaveTitle": "לעזוב את סביבת העבודה?",
+  "orgRemoveMemberTitle": "להסיר את החבר?",
+  "orgLeaveBody": "תאבדו גישה לשיחות ולמסמכים של סביבת עבודה זו.",
+  "orgRemoveMemberBody": "{name} יאבד/תאבד גישה לסביבת עבודה זו.",
+  "@orgRemoveMemberBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeave": "עזיבה",
+  "orgPersonalWorkspace": "סביבת עבודה אישית",
+  "orgLoadFailed": "לא ניתן לטעון את סביבת העבודה",
+  "sectionBudget": "תקציב",
+  "orgSpendingPerMonth": "הוצאה לחודש",
+  "orgNoLimit": "ללא הגבלה",
+  "orgTokensPerMonth": "טוקנים לחודש",
+  "orgUsageReport": "דוח שימוש",
+  "orgUsageReportValue": "לפי חבר, מודל או יום",
+  "sectionModels": "מודלים",
+  "orgAllowedModels": "מודלים מורשים",
+  "sectionTools": "כלים",
+  "orgMcpServers": "שרתי MCP",
+  "orgMcpValueAdmin": "שרתי כלים חיצוניים (Model Context Protocol)",
+  "orgMcpValueMember": "רק בעלים ומנהלים יכולים לנהל שרתי MCP",
+  "orgInvite": "הזמנה",
+  "orgAllModels": "כל המודלים",
+  "orgModelsCount": "{count} מודלים",
+  "@orgModelsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgPlanLine": "תוכנית {plan} · {count, plural, =1{חבר אחד} other{{count} חברים}} · אתם {role}",
+  "@orgPlanLine": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgRenameTooltip": "שינוי שם",
+  "sectionMembers": "חברים",
+  "orgNoMembers": "אין חברים",
+  "orgInviteOnlyAdmins": "רק בעלים ומנהלים יכולים להזמין חברים או לשנות תפקידים.",
+  "orgYou": "(אתם)",
+  "orgMakeAdmin": "הפיכה למנהל",
+  "orgMakeMember": "הפיכה לחבר",
+  "orgLeaveWorkspace": "עזיבת סביבת העבודה",
+  "orgBudgetInvalid": "הזינו מספר חיובי, או השאירו שדה ריק ללא הגבלה",
+  "orgMonthlyBudget": "תקציב חודשי",
+  "orgBudgetBody": "כשהתקציב נגמר, חברים לא יכולים להתחיל סבבים חדשים עד תחילת החודש הבא. השאירו שדה ריק ללא הגבלה.",
+  "orgSpendingUsdHint": "הוצאה (דולר)",
+  "orgTokensHint": "טוקנים",
+  "orgAllModelsSubtitle": "חברים יכולים לבחור כל מודל שהשרת מציע.",
+  "orgInviteEmailRequired": "הזינו את כתובת האימייל של החבר",
+  "orgInviteNotFound": "אין חשבון NexusBot עם האימייל הזה — בקשו מהם להירשם קודם.",
+  "orgInviteConflict": "האדם הזה כבר חבר בסביבת עבודה זו.",
+  "orgInviteTitle": "הזמנת חבר",
+  "orgInviteBody": "לאדם צריך להיות חשבון NexusBot עם האימייל הזה.",
+  "orgInviteEmailHint": "name@company.com",
+  "orgRole": "תפקיד",
+  "orgInviting": "מזמין…",
+  "usageYou": "אתם",
+  "usageWorkspace": "סביבת עבודה",
+  "usageSpendingBudget": "תקציב הוצאה",
+  "usageTokenBudget": "תקציב טוקנים",
+  "usageOf": "{used} מתוך {budget}",
+  "@usageOf": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageNoBudget": "לסביבת עבודה זו אין תקציב חודשי.",
+  "usageTokens": "טוקנים",
+  "usageCost": "עלות",
+  "usageMessages": "הודעות",
+  "usageMeterUnknown": "שימוש · —",
+  "usageThisMonth": "שימוש החודש",
+  "usageMeterRatio": "{used} / {budget}",
+  "@usageMeterRatio": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterTokens": "{used} / {budget} טוקנים",
+  "@usageMeterTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterPlain": "{tokens} טוקנים · {cost}",
+  "@usageMeterPlain": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaTitle": "התקציב החודשי נגמר",
+  "quotaResets": "מתאפס {when}",
+  "@quotaResets": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresUsd": "נוצלו {used} מתוך {budget}",
+  "@quotaFiguresUsd": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresTokens": "נוצלו {used} מתוך {budget} טוקנים",
+  "@quotaFiguresTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMetricCost": "עלות",
+  "usageMetricTokens": "טוקנים",
+  "usageMetricMessages": "הודעות",
+  "usageGroupUser": "משתמש",
+  "usageGroupModel": "מודל",
+  "usageGroupDay": "יום",
+  "usageGroupOrg": "ארגון",
+  "usageNoUsage": "אין שימוש בטווח הזה.",
+  "usageBarCaption": "{tokens} טוקנים · {cost} · {count, plural, =1{הודעה אחת} other{{count} הודעות}}",
+  "@usageBarCaption": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "usageReportServer": "שימוש בשרת",
+  "usageReportTitle": "דוח שימוש",
+  "usageReportPersonal": "שימוש אישי",
+  "usageReportOrg": "{name} · שימוש",
+  "@usageReportOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOnlyTitle": "למנהלי מערכת בלבד",
+  "usageAdminOnlyBody": "הדוח הזה זמין למנהלי השרת בלבד.",
+  "usageThisMonthChip": "החודש",
+  "usageLast30": "30 הימים האחרונים",
+  "usageCustom": "מותאם אישית…",
+  "usageGroupBy": "קיבוץ לפי",
+  "usageBy": "לפי {group}",
+  "@usageBy": {
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "usageRange": "{from} – {to}",
+  "@usageRange": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTitleFallback": "שיחה",
+  "chatSessionModelTooltip": "מודל השיחה",
+  "chatActionsTooltip": "פעולות בשיחה",
+  "chatExportMarkdown": "ייצוא כ-Markdown",
+  "chatExportJson": "ייצוא כ-JSON",
+  "chatCopyAsText": "העתקה כטקסט פשוט",
+  "chatShareLink": "קישור לשיתוף…",
+  "chatExported": "יוצא {filename}",
+  "@chatExported": {
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
+  },
+  "chatCopiedToClipboard": "הועתק ללוח",
+  "chatPickerFailed": "לא ניתן לפתוח את הבוחר: {error}",
+  "@chatPickerFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeAll": "ידע · הכול",
+  "chatKnowledgeNone": "ידע · ללא",
+  "chatKnowledgeOne": "ידע · {name}",
+  "@chatKnowledgeOne": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeCount": "ידע · {count, plural, =1{אוסף אחד} other{{count} אוספים}}",
+  "@chatKnowledgeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatBudgetPaused": "התקציב החודשי נגמר — השליחה מושהית",
+  "chatVisionHint": "{model} לא יכול לקרוא תמונות — בחרו מודל עם ראייה",
+  "@chatVisionHint": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatSessionModelEntry": "מודל השיחה ({model})",
+  "@chatSessionModelEntry": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatModelNextMessageTooltip": "מודל להודעה הבאה",
+  "chatAssistantFallback": "עוזר",
+  "chatPlainChat": "שיחה רגילה",
+  "chatEmptyTitle": "איך אפשר לעזור היום?",
+  "chatEmptyBody": "שאלו כל דבר. צרפו תמונות או קבצים, הפעילו RAG כדי לבסס תשובות על המסמכים שלכם, בחרו אוספי ידע לחיפוש, או תנו ל-NexusBot להפעיל כלים בשבילכם.",
+  "chatSuggestSummarize": "סיכום מסמך",
+  "chatSuggestExplainCode": "הסבר על קטע קוד",
+  "chatSuggestDescribePhoto": "תיאור תמונה",
+  "chatSuggestTranslate": "תרגום טקסט",
+  "chatLoadEarlier": "טעינת הודעות קודמות",
+  "chatLoadingEarlier": "טוען הודעות קודמות…",
+  "chatShowingCached": "מוצגות הודעות שמורות — יתרעננו כשהשרת יהיה זמין.",
+  "chatErrorBusy": "העוזר עדיין עונה על הודעה קודמת — חכו שיסיים.",
+  "chatErrorStaleApproval": "האישור הזה כבר טופל או שפג תוקפו — השיחה רועננה.",
+  "chatErrorVoiceUnavailable": "קול אינו זמין בשרת הזה.",
+  "chatErrorVisionRequired": "{message} מודלים עם ראייה: {models}.",
+  "@chatErrorVisionRequired": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "models": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQueuedLabel": "ממתין לשליחה…",
+  "chatQueuedFailed": "לא נשלח",
+  "chatRetrySend": "נסו שוב",
+  "chatCancelSend": "ביטול",
+  "chatVoiceMessagePlaceholder": "🎤 הודעה קולית…",
+  "msgModelTooltip": "מודל: {model}",
+  "@msgModelTooltip": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "msgEdit": "עריכה",
+  "msgRegenerate": "יצירה מחדש",
+  "editorHint": "עריכת ההודעה",
+  "editorSaveSend": "שמירה ושליחה",
+  "listenPlay": "השמעת התשובה",
+  "listenStop": "עצירה",
+  "stoppedLabel": "נעצר",
+  "composerPaused": "השליחה מושהית",
+  "composerHintAttachment": "הוסיפו הודעה על הקובץ המצורף…",
+  "composerHint": "כתבו ל-NexusBot…",
+  "composerRag": "RAG",
+  "composerTools": "כלים",
+  "composerToolsCount": "כלים · {summary}",
+  "@composerToolsCount": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "composerSpeak": "הקראה",
+  "composerSendBackground": "שליחה ברקע",
+  "composerSendTooltip": "שליחה",
+  "composerStopTooltip": "עצירת היצירה",
+  "attachTooltip": "צירוף",
+  "attachModelNoImages": "המודל שנבחר לא יכול לקרוא תמונות",
+  "attachPhotoLibrary": "ספריית התמונות",
+  "attachTakePhoto": "צילום תמונה",
+  "attachFile": "קובץ",
+  "attachFileSubtitle": "PDF, Word, טקסט, CSV, JSON או קובץ שמע",
+  "composerUploading": "מעלה…",
+  "siblingPrev": "הגרסה הקודמת",
+  "siblingNext": "הגרסה הבאה",
+  "feedbackRemoveUp": "הסרת הלייק",
+  "feedbackGood": "תשובה טובה",
+  "feedbackRemoveDown": "הסרת הדיסלייק",
+  "feedbackBad": "תשובה גרועה",
+  "memoriesUsed": "{count, plural, =1{נעשה שימוש בזיכרון אחד} other{נעשה שימוש ב-{count} זיכרונות}}",
+  "@memoriesUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "approvalRequired": "נדרש אישור",
+  "approvalUntil": "עד {time}",
+  "@approvalUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "approvalPendingBody": "NexusBot רוצה להריץ את הפעולות הבאות לפני שימשיך.",
+  "approvalStaleBody": "אי אפשר לענות עוד על הבקשה הזו.",
+  "approvalDeny": "דחייה",
+  "approvalApprove": "אישור",
+  "approvalExpired": "תוקף האישור פג",
+  "approvalApproved": "אושר",
+  "approvalDenied": "נדחה",
+  "approvalResolved": "האישור כבר טופל",
+  "toolChip": "כלי: {name}",
+  "@toolChip": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "toolInput": "קלט",
+  "toolError": "שגיאה",
+  "toolOutput": "פלט",
+  "toolDeniedBody": "הפעלת הכלי הזה נדחתה.",
+  "toolNoIo": "לא נרשמו קלט או פלט.",
+  "toolStatusOk": "תקין",
+  "toolStatusError": "שגיאה",
+  "toolStatusDenied": "נדחה",
+  "toolStatusUnknown": "לא ידוע",
+  "toolLatencyMs": "{ms} מ\"ש",
+  "@toolLatencyMs": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      }
+    }
+  },
+  "toolLatencyS": "{seconds} שנ'",
+  "@toolLatencyS": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "codeLabel": "קוד",
+  "citationExcerptOnly": "מוצג הקטע בלבד — המקטע המלא אינו זמין.",
+  "citationEmptyChunk": "(מקטע ריק)",
+  "citationChunkIndex": "מקטע #{index}",
+  "@citationChunkIndex": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "citationTokens": "{count} טוקנים",
+  "@citationTokens": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "citationChars": "תווים {from}–{to}",
+  "@citationChars": {
+    "placeholders": {
+      "from": {
+        "type": "int"
+      },
+      "to": {
+        "type": "int"
+      }
+    }
+  },
+  "citationOpenDocuments": "פתיחה במסמכים",
+  "citationMatch": "התאמה {score}%",
+  "@citationMatch": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      }
+    }
+  },
+  "citationMatchKind": "{score}% · {kind}",
+  "@citationMatchKind": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "citationLoadFailed": "לא ניתן לטעון את המקטע: {error}",
+  "@citationLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toolPickerTitle": "כלים לשיחה הזו",
+  "toolPickerSubtitle": "בחרו במה הסוכן רשאי להשתמש. כלים המסומנים במגן מבקשים את אישורכם לפני ההפעלה.",
+  "toolPickerReset": "איפוס לברירת המחדל",
+  "toolApprovalTooltip": "מבקש את אישורכם לפני ההפעלה",
+  "toolGroupBuiltin": "מובנה",
+  "toolMcpServer": "שרת MCP",
+  "knowledgeTitle": "ידע לשיחה הזו",
+  "knowledgeSubtitle": "התשובות מבוססות על האוספים שנבחרו. הבחירה נשמרת כברירת המחדל של השיחה.",
+  "knowledgeAllDocs": "כל המסמכים",
+  "knowledgeAllDocsSubtitle": "חיפוש בכל מה שהעליתם.",
+  "collectionDocCount": "{count, plural, =1{מסמך אחד} other{{count} מסמכים}}",
+  "@collectionDocCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "knowledgeNoCollections": "אין אוספים עדיין — צרו אחד ממסך האוספים.",
+  "feedbackTitle": "מה השתבש?",
+  "feedbackSubtitle": "לא חובה — הערה קצרה עוזרת לשפר את התשובות. הדיסלייק נרשם בכל מקרה.",
+  "feedbackHint": "למשל: התשובה התעלמה מהמסמך שלי",
+  "modelChooseTooltip": "בחירת מודל",
+  "assistantPickerTitle": "התחלת שיחה עם…",
+  "assistantPickerSubtitle": "עוזר מביא איתו הוראות, מודל, כלים וידע משלו.",
+  "assistantPlainChat": "שיחה רגילה",
+  "assistantPlainChatSubtitle": "ללא עוזר — מודל ברירת המחדל וההגדרות שלכם",
+  "assistantDefaultBadge": "ברירת מחדל",
+  "assistantMenuTooltip": "עוזר לשיחה הזו",
+  "assistantsTitle": "עוזרים",
+  "assistantsLoadFailed": "לא ניתן לטעון את העוזרים",
+  "assistantsCreateTitle": "יצירת עוזר",
+  "assistantsCreateBody": "דמות עם הוראות, מודל, כלים וידע משלה, שכל אחד בסביבת העבודה יכול להתחיל איתה שיחה.",
+  "assistantsNew": "עוזר חדש",
+  "assistantDeleteTitle": "למחוק את העוזר?",
+  "assistantDeleteBody": "“{name}” יוסר. שיחות שהשתמשו בו ישמרו את ההיסטוריה שלהן.",
+  "@assistantDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantDeleted": "“{name}” נמחק",
+  "@assistantDeleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantReadOnlyMessage": "רק יוצר העוזר או מנהל סביבת העבודה יכולים לשנות אותו.",
+  "assistantHintRag": "RAG",
+  "assistantHintTools": "{count, plural, =1{כלי אחד} other{{count} כלים}}",
+  "@assistantHintTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantHintMemory": "זיכרון",
+  "assistantHintReadOnly": "לקריאה בלבד",
+  "assistantRemoveDefault": "הסרת ברירת המחדל",
+  "assistantMakeDefault": "הפיכה לברירת מחדל",
+  "assistantNameRequired": "תנו שם לעוזר",
+  "assistantCreated": "“{name}” נוצר",
+  "@assistantCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantSaved": "העוזר נשמר",
+  "assistantLoadFailed": "לא ניתן לטעון את העוזר",
+  "assistantReadOnlyBanner": "לקריאה בלבד — {message}",
+  "@assistantReadOnlyBanner": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantNameHint": "שם",
+  "assistantDescriptionHint": "תיאור (מוצג בבוחר)",
+  "assistantPromptHint": "הנחיית מערכת — מי העוזר ואיך עליו לענות",
+  "sectionModel": "מודל",
+  "assistantModelLabel": "מודל",
+  "assistantWorkspaceDefault": "ברירת המחדל של סביבת העבודה",
+  "assistantCustomTemperature": "טמפרטורה מותאמת",
+  "assistantTemperatureDefault": "ברירת המחדל של המודל — נמוך יותר ממוקד יותר, גבוה יותר יצירתי יותר",
+  "sectionKnowledge": "ידע",
+  "assistantUseDocuments": "שימוש במסמכים (RAG)",
+  "assistantUseDocumentsSubtitle": "ביסוס התשובות על המסמכים של סביבת העבודה.",
+  "assistantCollectionsLabel": "אוספים (ללא בחירה = כל המסמכים)",
+  "assistantUseTools": "שימוש בכלים",
+  "assistantUseToolsSubtitle": "אפשרו לסוכן להפעיל כלים; כלים עם מגן מבקשים אישור.",
+  "assistantNoTools": "לא הוגדרו כלים בשרת הזה.",
+  "sectionBehaviour": "התנהגות",
+  "assistantUseMemory": "שימוש בזיכרון",
+  "assistantUseMemorySubtitle": "זכירת עובדות והעדפות בין שיחות (דורש גם את הגדרת החשבון שלכם).",
+  "assistantDefault": "עוזר ברירת מחדל",
+  "assistantDefaultSubtitle": "נבחר מראש בבוחר השיחה החדשה לכל חברי סביבת העבודה.",
+  "assistantCreateButton": "יצירת עוזר",
+  "assistantSaveChanges": "שמירת השינויים",
+  "assistantNewTitle": "עוזר חדש",
+  "assistantDeleteTooltip": "מחיקה",
+  "attachmentTranscribed": "תומלל",
+  "attachmentAudio": "שמע",
+  "attachmentGenerated": "נוצר על ידי כלי",
+  "attachmentTextExtracted": "טקסט חולץ",
+  "attachmentRemove": "הסרה",
+  "attachmentDownload": "הורדה",
+  "collectionsTitle": "אוספים",
+  "collectionsNew": "אוסף חדש",
+  "collectionCreated": "האוסף “{name}” נוצר",
+  "@collectionCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionEdit": "עריכת האוסף",
+  "collectionDeletedWithDocs": "“{name}” והמסמכים שבו נמחקו",
+  "@collectionDeletedWithDocs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionDeletedKept": "“{name}” נמחק — המסמכים שבו נשמרו",
+  "@collectionDeletedKept": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionsLoadFailed": "לא ניתן לטעון את האוספים",
+  "collectionsEmptyTitle": "קבצו את המסמכים שלכם",
+  "collectionsEmptyBody": "אוספים הם מאגרי ידע: שימו מסמכים קשורים יחד והגבילו כל שיחה רק לאלה שהיא צריכה.",
+  "collectionsCreateOne": "יצירת אוסף",
+  "collectionShowDocuments": "הצגת המסמכים",
+  "collectionRenameDescribe": "שינוי שם / תיאור",
+  "collectionNameRequired": "תנו שם לאוסף",
+  "collectionNameHint": "שם",
+  "collectionDescriptionHint": "תיאור (לא חובה)",
+  "collectionDeleteTitle": "למחוק את האוסף?",
+  "collectionDeleteBody": "“{name}” יוסר. {count, plural, =1{המסמך היחיד שבו יישאר} other{{count} המסמכים שבו יישארו}} בספרייה שלכם אלא אם תמחקו גם אותם.",
+  "@collectionDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionAlsoDeleteDocs": "למחוק גם את המסמכים",
+  "documentsTitle": "מסמכים",
+  "documentsAddFromUrl": "הוספה מכתובת URL",
+  "documentsUploadTitle": "העלאת “{name}”",
+  "@documentsUploadTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsUpload": "העלאה",
+  "documentQueued": "המסמך נכנס לתור לאינדוקס",
+  "documentDuplicate": "“{name}” כבר הועלה — מוצג העותק הקיים",
+  "@documentDuplicate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMoveTitle": "העברת “{name}”",
+  "@documentsMoveTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMove": "העברה",
+  "documentDeleteTitle": "למחוק את המסמך?",
+  "documentDeleteBody": "“{name}” יוסר.",
+  "@documentDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsLoadFailed": "לא ניתן לטעון את המסמכים",
+  "documentsEmptyTitle": "העלו ידע ל-NexusBot",
+  "documentsEmptyInCollection": "אין עדיין כלום ב-“{name}”",
+  "@documentsEmptyInCollection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsThisCollection": "האוסף הזה",
+  "documentsEmptyBody": "PDF, DOCX, MD, TXT, HTML — או דף אינטרנט לפי כתובת. כל העלאה מפוצלת למקטעים, מוטמעת ומוכנה ל-RAG.",
+  "documentsEmptyCollectionBody": "העלו קובץ או העבירו לכאן מסמכים מהתפריט שלהם.",
+  "documentsUploadFile": "העלאת קובץ",
+  "documentsUploading": "מעלה את {name}…",
+  "@documentsUploading": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentFrom": "מתוך {host}",
+  "@documentFrom": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "documentMoveToCollection": "העברה לאוסף…",
+  "docStatusPending": "ממתין",
+  "docStatusIndexing": "מאנדקס",
+  "docStatusIndexingPct": "מאנדקס {percent}%",
+  "@docStatusIndexingPct": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "docStatusReady": "מוכן",
+  "docStatusFailed": "נכשל",
+  "documentsCollectionLabel": "אוסף",
+  "documentsNoCollection": "ללא אוסף",
+  "documentsUrlInvalid": "הזינו כתובת מלאה שמתחילה ב-http(s)://",
+  "documentsAddFromUrlBody": "NexusBot מוריד את הדף ומאנדקס אותו כמו העלאה.",
+  "documentsFetching": "מוריד…",
+  "mcpDuplicateName": "כבר קיים שרת בשם הזה בסביבת העבודה.",
+  "mcpAdded": "“{name}” נוסף",
+  "@mcpAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpRemoveTitle": "להסיר את השרת?",
+  "mcpRemoveBody": "“{name}” והכלים שלו ייעלמו מכל שיחה ועוזר בסביבת עבודה זו.",
+  "@mcpRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTitle": "שרתי MCP",
+  "mcpTitleOrg": "שרתי MCP · {name}",
+  "@mcpTitleOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpLoadFailed": "לא ניתן לטעון את השרתים",
+  "mcpEmptyTitle": "אין שרתי MCP עדיין",
+  "mcpEmptyBodyAdmin": "רשמו שרת Model Context Protocol מסוג HTTP או SSE; הכלים שלו יופיעו בבוחר הכלים בתור mcp:<server>:<tool>.",
+  "mcpEmptyBodyMember": "רק בעלים ומנהלים יכולים לרשום שרתי MCP.",
+  "mcpAddServer": "הוספת שרת",
+  "mcpIntro": "הכלים של שרתים פעילים מוצעים לכל שיחה ועוזר בסביבת העבודה. שרתים המסומנים במגן מבקשים אישור לפני הפעלת כלי.",
+  "mcpHeaders": "{count, plural, =1{כותרת אחת} other{{count} כותרות}}",
+  "@mcpHeaders": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpEnvVars": "{count, plural, =1{משתנה סביבה אחד} other{{count} משתני סביבה}}",
+  "@mcpEnvVars": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpApprovalTooltip": "הכלים מבקשים אישור לפני ההפעלה",
+  "mcpDisabled": "מושבת",
+  "mcpSecretsStored": "{list} (שמורים, לא מוצגים לעולם)",
+  "@mcpSecretsStored": {
+    "placeholders": {
+      "list": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTestConnection": "בדיקת החיבור",
+  "mcpEnabled": "פעיל",
+  "mcpRequiresApproval": "דורש אישור",
+  "mcpTest": "בדיקה",
+  "mcpNameInvalid": "שם: אותיות לטיניות קטנות, ספרות, \"-\" או \"_\" (למשל github)",
+  "mcpUrlRequired": "הזינו את כתובת השרת (http:// או https://)",
+  "mcpCommandRequired": "הזינו את הפקודה שמפעילה את השרת",
+  "mcpAddTitle": "הוספת שרת MCP",
+  "mcpEditTitle": "עריכת “{name}”",
+  "@mcpEditTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpNameHint": "שם (slug, למשל github)",
+  "mcpTransport": "תעבורה",
+  "mcpTransportStdio": "stdio (פקודה על שרת ה-API)",
+  "mcpUrlHint": "https://mcp.example.com/sse",
+  "mcpHeadersHint": "כותרות, אחת בכל שורה{suffix}\nAuthorization=Bearer …",
+  "@mcpHeadersHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpKeepStored": " (השאירו ריק כדי לשמור את הקיימות)",
+  "mcpCommandHint": "פקודה (למשל npx)",
+  "mcpArgsHint": "ארגומנטים (מופרדים ברווח, למשל -y @modelcontextprotocol/server-github)",
+  "mcpEnvHint": "משתני סביבה, אחד בכל שורה{suffix}\nGITHUB_TOKEN=…",
+  "@mcpEnvHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpToolsRequireApproval": "הכלים דורשים אישור",
+  "mcpToolsRequireApprovalSubtitle": "כל קריאה משהה את הסבב עד שהמשתמש מאשר אותה.",
+  "mcpTestTitle": "בדיקת “{name}”",
+  "@mcpTestTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnecting": "מתחבר…",
+  "mcpNoAnswer": "השרת לא ענה",
+  "mcpTestAgain": "בדיקה חוזרת",
+  "mcpConnectionFailed": "החיבור נכשל: {error}",
+  "@mcpConnectionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnected": "התחבר תוך {ms} מ\"ש · {count, plural, =1{כלי אחד} other{{count} כלים}}",
+  "@mcpConnected": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpNoTools": "השרת לא חושף כלים.",
+  "memoryRememberTitle": "לזכור משהו",
+  "memoryEditTitle": "עריכת זיכרון",
+  "memoryForgotten": "נשכח",
+  "memoryForgetAllTitle": "לשכוח הכול?",
+  "memoryForgetAllBody": "{count, plural, =1{הזיכרון היחיד} other{כל {count} הזיכרונות}} יימחקו. NexusBot יתחיל ללמוד עליכם מחדש משיחות חדשות.",
+  "@memoryForgetAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryForgetAll": "לשכוח הכול",
+  "memoryTitle": "זיכרון",
+  "memoryForgetEverything": "לשכוח הכול",
+  "memoryLoadFailed": "לא ניתן לטעון את הזיכרונות",
+  "memoryHeading": "מה NexusBot זוכר",
+  "memoryIntro": "עובדות, העדפות והוראות קבועות שנאספו מהשיחות שלכם (או נוספו כאן) נשזרות בשיחות הבאות. תשובות שהשתמשו בזיכרונות מציינות זאת מתחת להודעה.",
+  "memoryEmptyTitle": "עוד לא נזכר כלום",
+  "memoryEmptyOn": "שוחחו קצת, או הוסיפו משהו ש-NexusBot צריך לזכור.",
+  "memoryEmptyOff": "הזיכרון כבוי בחשבון שלכם.",
+  "memoryAddOne": "הוספת זיכרון",
+  "memoryAdd": "הוספת זיכרון",
+  "memoryOffBanner": "הזיכרון כבוי — שום דבר חדש לא נזכר והזיכרונות הקיימים אינם בשימוש.",
+  "memoryNeverUsed": "לא היה בשימוש",
+  "memoryAdded": "נוסף ב-{date}",
+  "@memoryAdded": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryUsed": "בשימוש ב-{date}",
+  "@memoryUsed": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryForget": "לשכוח",
+  "memoryImportanceTooltip": "חשיבות {level} מתוך 5",
+  "@memoryImportanceTooltip": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryContentRequired": "כתבו מה NexusBot צריך לזכור",
+  "memoryContentHint": "למשל: אני מעדיף תשובות קצרות עם דוגמאות קוד",
+  "memoryKind": "סוג",
+  "memoryImportance": "חשיבות",
+  "memoryKindFacts": "עובדות",
+  "memoryKindPreferences": "העדפות",
+  "memoryKindInstructions": "הוראות",
+  "memoryKindFact": "עובדה",
+  "memoryKindPreference": "העדפה",
+  "memoryKindInstruction": "הוראה",
+  "shareExpiry1Day": "יום אחד",
+  "shareExpiry7Days": "7 ימים",
+  "shareExpiry30Days": "30 יום",
+  "shareExpiry1Year": "שנה",
+  "shareNexusBotChat": "שיחת NexusBot",
+  "shareSheetFailed": "לא ניתן לפתוח את חלון השיתוף: {error}",
+  "@shareSheetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "shareTitle": "שיתוף השיחה",
+  "shareBody": "כל מי שיש לו את הקישור יכול לקרוא את השיחה (הודעות המשתמש והעוזר) עד שיפוג תוקפו או עד שתבטלו אותו.",
+  "shareExpiresIn": "פג תוקף בעוד",
+  "shareCreating": "יוצר…",
+  "shareCreateLink": "יצירת קישור",
+  "shareCreatedNotice": "הקישור נוצר — העתיקו אותו עכשיו, הוא מוצג פעם אחת בלבד.",
+  "shareSystemShare": "שיתוף…",
+  "shareActiveLinks": "קישורים פעילים",
+  "shareRevokeAll": "ביטול הכול",
+  "shareNoActive": "אין קישורים פעילים.",
+  "shareExpired": "פג תוקף {when}",
+  "@shareExpired": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareExpires": "פג תוקף {when}",
+  "@shareExpires": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareViews": "{count, plural, =1{צפייה אחת} other{{count} צפיות}}",
+  "@shareViews": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareRevoke": "ביטול",
+  "voiceHoldOrTap": "החזיקו או הקישו כדי לדבר",
+  "voiceRecording": "מקליט — הקישו לשליחה",
+  "voiceTranscribing": "מתמלל…",
+  "voiceUnavailable": "קלט קולי אינו זמין",
+  "voiceMicDenied": "הגישה למיקרופון נדחתה",
+  "voiceStartFailed": "לא ניתן להתחיל הקלטה: {error}",
+  "@voiceStartFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceNothingRecorded": "לא הוקלט כלום",
+  "voiceRecordingFailed": "ההקלטה נכשלה: {error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceServerDefault": "ברירת המחדל של השרת",
+  "adminFeedbackTitle": "משוב",
+  "adminFeedbackOnly": "המשוב זמין למנהלי השרת בלבד.",
+  "adminFeedbackLoadFailed": "לא ניתן לטעון את המשוב",
+  "adminFeedbackEmptyTitle": "אין משוב עדיין",
+  "adminFeedbackEmptyBody": "לייקים ודיסלייקים שניתנו לתשובות יופיעו כאן.",
+  "adminLoadMore": "טעינת עוד",
+  "adminCountOf": "{shown} מתוך {total}",
+  "@adminCountOf": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "adminNoComment": "ללא הערה",
+  "adminThumbsUp": "לייק",
+  "adminThumbsDown": "דיסלייק",
+  "adminUserSuffix": "משתמש …{suffix}",
+  "@adminUserSuffix": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOpenChat": "פתיחת השיחה",
+  "settingsTitle": "הגדרות",
+  "settingsSaveModelFailed": "לא ניתן לשמור את מודל ברירת המחדל: {error}",
+  "@settingsSaveModelFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsMemoryUpdateFailed": "לא ניתן לעדכן את הזיכרון: {error}",
+  "@settingsMemoryUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDisplayName": "שם תצוגה",
+  "settingsYourName": "השם שלכם",
+  "settingsDisplayNameUpdated": "שם התצוגה עודכן",
+  "settingsPasswordChanged": "הסיסמה שונתה. מכשירים אחרים נותקו.",
+  "settingsSignOutEverywhereTitle": "לצאת מכל המכשירים?",
+  "settingsSignOutEverywhereBody": "כל מכשיר שמחובר לחשבון הזה יצטרך להתחבר מחדש.",
+  "settingsSignOutEverywhere": "יציאה מכל המכשירים",
+  "settingsDeleteAllChatsTitle": "למחוק את כל השיחות?",
+  "settingsDeleteAllChatsBody": "פעולה זו מוחקת כל שיחה בחשבון שלכם. המסמכים נשמרים.",
+  "settingsDeleteAll": "מחיקת הכול",
+  "settingsDeletedChats": "{count, plural, =1{שיחה אחת נמחקה} other{{count} שיחות נמחקו}}",
+  "@settingsDeletedChats": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDeleteAccountTitle": "למחוק את החשבון?",
+  "settingsDeleteAccountBody": "החשבון, השיחות והמסמכים שלכם יימחקו. אי אפשר לבטל פעולה זו. הזינו את הסיסמה לאישור.",
+  "settingsDeleteAccount": "מחיקת החשבון",
+  "settingsSignedIn": "מחובר",
+  "sectionWorkspace": "סביבת עבודה",
+  "settingsActiveWorkspace": "סביבת העבודה הפעילה",
+  "settingsOrgRole": "{name} · {role}",
+  "@settingsOrgRole": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsManageWorkspace": "ניהול סביבת העבודה",
+  "settingsManageWorkspaceSubtitle": "שם, תקציבים, מודלים מורשים, חברים.",
+  "settingsUsageReportSubtitle": "טוקנים, עלות והודעות לפי חבר, מודל או יום.",
+  "settingsAssistantsSubtitle": "דמויות להתחלת שיחות.",
+  "sectionUsage": "שימוש",
+  "settingsLoadingUsage": "טוען שימוש…",
+  "settingsUsageFailed": "לא ניתן לטעון את השימוש: {error}",
+  "@settingsUsageFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionAppearance": "מראה",
+  "themeSystem": "מערכת",
+  "themeLight": "בהיר",
+  "themeDark": "כהה",
+  "settingsLanguage": "שפה",
+  "settingsLanguageSystem": "שפת המערכת",
+  "sectionChat": "שיחה",
+  "settingsStream": "תשובות בזרימה",
+  "settingsStreamSubtitle": "קבלה טוקן אחר טוקן. כבוי = המתנה לתשובה המלאה.",
+  "settingsRag": "RAG כברירת מחדל",
+  "settingsRagSubtitle": "ביסוס התשובות על המסמכים שהעליתם.",
+  "settingsTools": "כלים כברירת מחדל",
+  "settingsToolsSubtitle": "אפשרו לסוכן להפעיל כלים (מחשבון, חיפוש, …) בשיחות חדשות.",
+  "settingsMemory": "זיכרון",
+  "settingsMemorySubtitle": "זכירת עובדות והעדפות מהשיחות ושימוש בהן מאוחר יותר.",
+  "settingsWhatRemembers": "מה NexusBot זוכר",
+  "settingsWhatRemembersSubtitle": "סקירה, עריכה או שכחה של זיכרונות.",
+  "settingsTransport": "תעבורת הזרימה",
+  "settingsTransportSse": "Server-Sent Events",
+  "settingsTransportWs": "WebSocket",
+  "sectionVoice": "קול",
+  "settingsSpeakReplies": "הקראת תשובות",
+  "settingsSpeakRepliesSubtitle": "הקראת כל תשובה בקול עם הגעתה (טקסט לדיבור על ידי {provider}).",
+  "@settingsSpeakRepliesSubtitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsVoice": "קול",
+  "settingsVoiceInput": "קלט קולי",
+  "settingsVoiceInputValue": "החזיקו את המיקרופון בשיחה",
+  "settingsLoadingModels": "טוען מודלים מהשרת…",
+  "settingsModelsFailed": "לא ניתן לטעון את המודלים: {error}",
+  "@settingsModelsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsNoProviders": "לא הוגדרו ספקי מודלים בשרת הזה.",
+  "settingsModelNote": "משמש לשיחות חדשות. כל שיחה יכולה להחליף מודל מהכותרת שלה, והעורך יכול לעקוף אותו לכל הודעה. משכו כדי לרענן את הרשימה.",
+  "modelNoTools": "ללא כלים",
+  "modelVision": "ראייה",
+  "sectionAdministration": "ניהול",
+  "settingsServerUsage": "שימוש בשרת",
+  "settingsServerUsageSubtitle": "כל סביבות העבודה, לפי ארגון, משתמש, מודל או יום.",
+  "settingsFeedback": "משוב",
+  "settingsFeedbackSubtitle": "לייקים ודיסלייקים שניתנו לתשובות.",
+  "sectionConnection": "חיבור",
+  "settingsApiBaseUrl": "כתובת ה-API",
+  "sectionSecurity": "אבטחה",
+  "settingsBiometric": "פתיחה ביומטרית",
+  "settingsBiometricSubtitle": "בקשת טביעת אצבע, פנים או קוד נעילה כשהאפליקציה נפתחת.",
+  "settingsBiometricUnavailable": "המכשיר הזה לא יכול לאמת באמצעים ביומטריים או קוד נעילה.",
+  "sectionOffline": "לא מקוון",
+  "settingsClearCache": "ניקוי השיחות השמורות",
+  "settingsClearCacheSubtitle": "הסרת השיחות וההודעות השמורות במכשיר לשימוש לא מקוון.",
+  "settingsCacheCleared": "השיחות השמורות הוסרו",
+  "sectionAccount": "חשבון",
+  "settingsNotSet": "לא הוגדר",
+  "settingsChangePassword": "שינוי סיסמה",
+  "settingsChangePasswordSubtitle": "מנתק את כל המכשירים האחרים.",
+  "settingsClearAllChats": "ניקוי כל השיחות",
+  "settingsClearAllChatsSubtitle": "הסרת כל השיחות.",
+  "settingsSignOut": "יציאה",
+  "settingsSignOutEverywhereSubtitle": "ביטול כל המכשירים המחוברים.",
+  "settingsDeleteAccountSubtitle": "מחיקה לצמיתות של החשבון והנתונים שלכם.",
+  "sectionAbout": "אודות",
+  "settingsVersion": "גרסה",
+  "settingsLegal": "מדיניות פרטיות ותנאי שימוש",
+  "settingsLegalSubtitle": "איך הנתונים שלכם מטופלים וכללי השימוש.",
+  "settingsLicenses": "רישיונות קוד פתוח",
+  "settingsLicensesSubtitle": "חבילות צד שלישי שהאפליקציה בנויה עליהן.",
+  "settingsFooter": "NexusBot גרסה {version} · FastAPI · LangChain · Flutter",
+  "@settingsFooter": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsCurrentPassword": "הסיסמה הנוכחית",
+  "settingsCurrentPasswordRequired": "הזינו את הסיסמה הנוכחית",
+  "settingsNewPasswordHint": "סיסמה חדשה (לפחות 8 תווים)",
+  "settingsRepeatPassword": "חזרו על הסיסמה החדשה",
+  "settingsPasswordsMismatch": "הסיסמאות אינן תואמות",
+  "legalTitle": "פרטיות ותנאים",
+  "legalPrivacyTab": "מדיניות פרטיות",
+  "legalTermsTab": "תנאי שימוש",
+  "legalUpdated": "עודכן לאחרונה {date}",
+  "@legalUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP1": "NexusBot שומר את השיחות, המסמכים, הקבצים המצורפים והזיכרונות שאתם יוצרים כדי לענות לכם ולהציג אותם שוב במכשירים שלכם. הם נשמרים בשרת שאליו אתם מתחברים ({baseUrl}) וכן, לשימוש לא מקוון, במטמון במכשיר הזה.",
+  "@legalPrivacyP1": {
+    "placeholders": {
+      "baseUrl": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP2": "ההודעות והקבצים המצורפים שלכם נשלחים לספקי מודלי ה-AI שהשרת מוגדר איתם, אך ורק כדי ליצור תשובות. מנהלי סביבת העבודה יכולים לראות נתוני שימוש (טוקנים, עלות, מספר הודעות) אבל לא את השיחות שלכם.",
+  "legalPrivacyP3": "אפשר לייצא או למחוק כל שיחה, לשכוח זיכרונות ולמחוק את החשבון בכל עת מההגדרות. מחיקת החשבון מסירה את הנתונים שלכם מהשרת; ניקוי השיחות השמורות מסיר אותם מהמכשיר הזה.",
+  "legalPrivacyP4": "האפליקציה אינה מכילה פרסומות או מעקב. דיווח קריסות אופציונלי פעיל רק כשהמפעיל מפעיל אותו בזמן הבנייה.",
+  "legalTermsP1": "השתמשו ב-NexusBot באופן חוקי ומכבד: אל תעלו תוכן שאין לכם זכות לשתף, אל תנסו לפגוע בשירות ואל תשתמשו בו כדי להזיק לאחרים.",
+  "legalTermsP2": "התשובות נוצרות על ידי מודלי AI ועלולות להיות לא מדויקות. בדקו מידע חשוב לפני שאתם מסתמכים עליו.",
+  "legalTermsP3": "השירות ניתן כמות שהוא, ללא אחריות. בעלי סביבות העבודה אחראים לחברים שהם מזמינים ולתקציבים שהם מגדירים.",
+  "legalTermsP4": "שאלות? פנו למפעיל השרת שאליו אתם מתחברים.",
+  "shareIntakeTitle": "שיתוף ל-NexusBot",
+  "shareIntakeSubtitle": "בחרו לאיזו שיחה לשלוח.",
+  "shareIntakeNewChat": "שיחה חדשה",
+  "shareIntakeFiles": "{count, plural, =1{קובץ אחד} other{{count} קבצים}}",
+  "@shareIntakeFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareIntakeNoChats": "אין שיחות עדיין — התחילו חדשה.",
+  "shareIntakeAttachFailed": "לא ניתן לצרף את {name}",
+  "@shareIntakeAttachFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shareIntakeExisting": "שיחות קיימות",
+  "lockTitle": "NexusBot נעול",
+  "lockBody": "פתחו עם טביעת אצבע, זיהוי פנים או קוד הנעילה של המכשיר כדי להמשיך.",
+  "lockUnlock": "פתיחה",
+  "lockReason": "פתיחת NexusBot",
+  "lockFailed": "האימות נכשל — נסו שוב.",
+  "lockSignOut": "יציאה במקום",
+  "shortcutHintNewChat": "Ctrl+N"
+}

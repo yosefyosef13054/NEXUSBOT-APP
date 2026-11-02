@@ -1,5 +1,7 @@
 package com.example.nexusbot
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// FlutterFragmentActivity (not FlutterActivity): local_auth needs a
+// FragmentActivity to host the biometric prompt.
+class MainActivity : FlutterFragmentActivity()

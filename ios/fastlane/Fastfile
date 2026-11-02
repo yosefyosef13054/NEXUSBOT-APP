@@ -1,0 +1,56 @@
+# NexusBot — iOS lanes.
+#
+#   cd ios && bundle exec fastlane beta
+#
+# Environment:
+#   API_BASE_URL                        backend the build talks to (--dart-define)
+#   SENTRY_DSN                          optional crash reporting DSN (--dart-define)
+#   APP_STORE_CONNECT_API_KEY_ID        App Store Connect API key id
+#   APP_STORE_CONNECT_ISSUER_ID         App Store Connect issuer id
+#   APP_STORE_CONNECT_API_KEY_CONTENT   the .p8 key, base64-encoded
+#   APPLE_TEAM_ID                       Apple developer team (Appfile)
+#   IOS_BUNDLE_ID                       bundle identifier (defaults to com.example.nexusbot)
+#   MATCH_GIT_URL / MATCH_PASSWORD      optional: signing certificates through `match`
+#   SKIP_BUILD=1                        upload the IPA already in build/ instead of building
+#
+# Signing: either configure automatic signing in Xcode for the Runner target,
+# or set MATCH_GIT_URL (+ MATCH_PASSWORD) so `match` installs the App Store
+# profile before the build.
+
+default_platform(:ios)
+
+IPA_DIR = File.expand_path("../../build/ios/ipa", __dir__)
+
+def flutter_defines
+  defines = ["--dart-define=API_BASE_URL=#{ENV.fetch('API_BASE_URL', 'https://api.example.com/api/v1')}"]
+  defines << "--dart-define=SENTRY_DSN=#{ENV['SENTRY_DSN']}" if ENV["SENTRY_DSN"].to_s != ""
+  defines.join(" ")
+end
+
+platform :ios do
+  desc "Build the signed IPA (flutter build ipa)"
+  lane :build do
+    if ENV["MATCH_GIT_URL"].to_s != ""
+      match(type: "appstore", readonly: true, git_url: ENV["MATCH_GIT_URL"])
+    end
+    Dir.chdir("../..") do
+      sh("flutter pub get")
+      sh("flutter gen-l10n")
+      sh("flutter build ipa --release --export-method app-store #{flutter_defines}")
+    end
+  end
+
+  desc "Build (unless SKIP_BUILD=1) and upload the IPA to TestFlight"
+  lane :beta do
+    app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_API_KEY_CONTENT"),
+      is_key_content_base64: true
+    )
+    build unless ENV["SKIP_BUILD"] == "1"
+    ipa = Dir[File.join(IPA_DIR, "*.ipa")].first
+    UI.user_error!("No IPA in #{IPA_DIR}") if ipa.nil?
+    upload_to_testflight(ipa: ipa, skip_waiting_for_build_processing: true)
+  end
+end

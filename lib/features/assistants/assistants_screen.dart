@@ -7,6 +7,7 @@ import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../models/model_info.dart';
@@ -26,12 +27,18 @@ class AssistantsScreen extends ConsumerStatefulWidget {
 }
 
 class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
-  static const readOnlyMessage =
-      'Only the assistant\'s creator or a workspace admin can change it.';
-
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _toastError(Object e) {
+    if (!mounted) return;
+    if (e is ApiException && e.isForbidden) {
+      _toast(context.l10n.assistantReadOnlyMessage);
+    } else {
+      _toast(context.describeError(e));
+    }
   }
 
   Future<void> _refresh() async {
@@ -48,25 +55,27 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
       final repo = await ref.read(assistantsRepositoryProvider.future);
       await repo.setDefault(a.id, isDefault);
       ref.invalidate(assistantListProvider);
-    } on ApiException catch (e) {
-      _toast(e.isForbidden ? readOnlyMessage : e.userMessage);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _delete(Assistant a) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete assistant?'),
-        content: Text('“${a.name}” will be removed. Chats that used it keep their history.'),
+        title: Text(l10n.assistantDeleteTitle),
+        content: Text(l10n.assistantDeleteBody(a.name)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Delete'),
+            child: Text(l10n.commonDelete),
           ),
         ],
       ),
@@ -76,16 +85,15 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
       final repo = await ref.read(assistantsRepositoryProvider.future);
       await repo.delete(a.id);
       ref.invalidate(assistantListProvider);
-      _toast('“${a.name}” deleted');
-    } on ApiException catch (e) {
-      _toast(e.isForbidden ? readOnlyMessage : e.userMessage);
+      _toast(l10n.assistantDeleted(a.name));
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final assistants = ref.watch(assistantListProvider);
     final catalog = ref.watch(modelCatalogProvider).valueOrNull ?? ModelCatalog.empty;
@@ -95,10 +103,10 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Assistants', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.assistantsTitle, style: TextStyle(color: t.textPrimary)),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refresh,
           ),
@@ -120,10 +128,10 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
             children: [
               EmptyState(
                 icon: Icons.cloud_off_rounded,
-                title: 'Could not load assistants',
-                subtitle: errorText(e),
+                title: l10n.assistantsLoadFailed,
+                subtitle: context.describeError(e),
                 action: NexusGhostButton(
-                  label: 'Retry',
+                  label: l10n.commonRetry,
                   icon: Icons.refresh_rounded,
                   onPressed: _refresh,
                 ),
@@ -137,11 +145,10 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
                 children: [
                   EmptyState(
                     icon: Icons.smart_toy_outlined,
-                    title: 'Create an assistant',
-                    subtitle: 'A persona with its own instructions, model, tools and knowledge '
-                        'that anyone in the workspace can start a chat with.',
+                    title: l10n.assistantsCreateTitle,
+                    subtitle: l10n.assistantsCreateBody,
                     action: NexusButton(
-                      label: 'New assistant',
+                      label: l10n.assistantsNew,
                       icon: Icons.add_rounded,
                       expand: false,
                       onPressed: () => context.go(AppRoutes.assistantNew),
@@ -184,7 +191,7 @@ class _AssistantsScreenState extends ConsumerState<AssistantsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go(AppRoutes.assistantNew),
         icon: const Icon(Icons.add_rounded),
-        label: const Text('New assistant', style: TextStyle(fontWeight: FontWeight.w700)),
+        label: Text(l10n.assistantsNew, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -209,14 +216,15 @@ class _AssistantTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final a = assistant;
     final hints = <String>[
       modelLabel,
-      if (a.useRag) 'RAG',
-      if (a.useTools) '${a.toolNames.length} tool${a.toolNames.length == 1 ? '' : 's'}',
-      if (a.memoryEnabled) 'memory',
-      if (!editable) 'read-only',
+      if (a.useRag) l10n.assistantHintRag,
+      if (a.useTools) l10n.assistantHintTools(a.toolNames.length),
+      if (a.memoryEnabled) l10n.assistantHintMemory,
+      if (!editable) l10n.assistantHintReadOnly,
     ];
     return Material(
       color: Colors.transparent,
@@ -272,6 +280,7 @@ class _AssistantTile extends StatelessWidget {
                 ),
               ),
               PopupMenuButton<String>(
+                tooltip: l10n.commonMore,
                 icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
                 onSelected: (v) {
                   if (v == 'open') onOpen();
@@ -279,13 +288,18 @@ class _AssistantTile extends StatelessWidget {
                   if (v == 'delete') onDelete();
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(value: 'open', child: Text(editable ? 'Edit' : 'View')),
+                  PopupMenuItem(
+                    value: 'open',
+                    child: Text(editable ? l10n.commonEdit : l10n.commonView),
+                  ),
                   if (editable)
                     PopupMenuItem(
                       value: 'default',
-                      child: Text(a.isDefault ? 'Remove default' : 'Make default'),
+                      child: Text(
+                        a.isDefault ? l10n.assistantRemoveDefault : l10n.assistantMakeDefault,
+                      ),
                     ),
-                  if (editable) const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  if (editable) PopupMenuItem(value: 'delete', child: Text(l10n.commonDelete)),
                 ],
               ),
             ],

@@ -4,20 +4,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/api_exception.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
-import '../features/assistants/assistant_picker.dart';
 import '../features/auth/auth_providers.dart';
 import '../features/auth/auth_repository.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
-import '../features/models/models_repository.dart';
+import '../features/chat/new_chat.dart';
 import '../features/orgs/org_switcher.dart';
 import '../features/usage/usage_repository.dart';
 import '../features/usage/usage_widgets.dart';
+import '../l10n/l10n.dart';
 import 'highlight_text.dart';
+
+/// Focus node of the sidebar's search field, so the Ctrl / Cmd + K shortcut
+/// (handled by the shell) can reach it.
+final sidebarSearchFocusProvider = Provider<FocusNode>((ref) {
+  final node = FocusNode(debugLabel: 'sidebar-search');
+  ref.onDispose(node.dispose);
+  return node;
+});
 
 /// Persistent left sidebar shown on tablet/desktop (and inside the drawer on
 /// mobile). Contains:
@@ -33,7 +40,8 @@ import 'highlight_text.dart';
 /// - User profile dropdown (settings + sign out)
 ///
 /// Navigation goes through the router (`context.go`), so the selected session
-/// and active section are derived from the current location.
+/// and active section are derived from the current location. Every layout
+/// uses logical (start / end) geometry, so it mirrors under RTL.
 class Sidebar extends ConsumerStatefulWidget {
   const Sidebar({
     super.key,
@@ -111,7 +119,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
       setState(() {
         _results = null;
         _searching = false;
-        _searchError = errorText(e);
+        _searchError = context.describeError(e);
       });
     }
   }
@@ -133,27 +141,14 @@ class _SidebarState extends ConsumerState<Sidebar> {
 
   void _showError(Object e) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.describeError(e))));
   }
 
   Future<void> _newChat() async {
-    // Plain chat, or one of the workspace's assistants (default preselected).
-    final choice = await pickAssistantForNewChat(context, ref);
-    if (choice == null || !mounted) return;
     setState(() => _creating = true);
     try {
-      final repo = await ref.read(chatRepositoryProvider.future);
-      // Only a model the server lists is sent; null lets the server resolve
-      // the user's / its own default — or the assistant's model.
-      final s = await repo.createSession(
-        model: choice.assistantId == null ? ref.read(defaultModelIdProvider) : null,
-        assistantId: choice.assistantId,
-      );
-      ref.invalidate(sessionListProvider);
-      if (!mounted) return;
-      _go(AppRoutes.chat(s.id));
-    } catch (e) {
-      _showError(e);
+      final id = await startNewChat(context, ref);
+      if (id != null) widget.onNavigated?.call();
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -176,17 +171,21 @@ class _SidebarState extends ConsumerState<Sidebar> {
   }
 
   Future<void> _delete(ChatSession s) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete chat?'),
-        content: Text('“${s.title}” will be removed. This can’t be undone.'),
+        title: Text(l10n.sidebarDeleteChatTitle),
+        content: Text(l10n.sidebarDeleteChatBody(s.title)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Delete'),
+            child: Text(l10n.commonDelete),
           ),
         ],
       ),
@@ -213,23 +212,25 @@ class _SidebarState extends ConsumerState<Sidebar> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final user = ref.watch(currentUserProvider);
     final sessions = ref.watch(sessionListProvider);
     final usage = ref.watch(usageMeProvider).valueOrNull;
+    final searchFocus = ref.watch(sidebarSearchFocusProvider);
 
     return Container(
       width: widget.width,
       decoration: BoxDecoration(
         color: t.surface,
-        border: Border(right: BorderSide(color: t.border)),
+        border: BorderDirectional(end: BorderSide(color: t.border)),
       ),
       child: SafeArea(
         child: Column(
           children: [
             // ── Header ───────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(
+              padding: const EdgeInsetsDirectional.fromSTEB(
                 NexusSpacing.lg,
                 NexusSpacing.lg,
                 NexusSpacing.lg,
@@ -242,6 +243,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                   const Expanded(child: NexusWordmark(fontSize: 18)),
                   if (widget.showClose != null)
                     IconButton(
+                      tooltip: l10n.sidebarCloseMenu,
                       icon: const Icon(Icons.close_rounded),
                       onPressed: widget.showClose,
                     ),
@@ -251,7 +253,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
 
             // ── Workspace switcher ───────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(
+              padding: const EdgeInsetsDirectional.fromSTEB(
                 NexusSpacing.lg,
                 0,
                 NexusSpacing.lg,
@@ -264,7 +266,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg),
               child: NexusButton(
-                label: 'New chat',
+                label: l10n.sidebarNewChat,
                 icon: Icons.add_rounded,
                 loading: _creating,
                 onPressed: _creating ? null : _newChat,
@@ -277,13 +279,15 @@ class _SidebarState extends ConsumerState<Sidebar> {
               padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg),
               child: TextField(
                 controller: _search,
+                focusNode: searchFocus,
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
-                  hintText: 'Search chats and messages…',
+                  hintText: l10n.sidebarSearchHint,
                   prefixIcon: const Icon(Icons.search_rounded, size: 18),
                   suffixIcon: _search.text.isEmpty
                       ? null
                       : IconButton(
+                          tooltip: l10n.sidebarClearSearch,
                           icon: const Icon(Icons.close_rounded, size: 16),
                           onPressed: _clearSearch,
                         ),
@@ -299,7 +303,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
               child: Row(
                 children: [
                   Text(
-                    'CHATS',
+                    l10n.sidebarChats,
                     style: TextStyle(
                       color: t.textMuted,
                       fontSize: 10,
@@ -326,7 +330,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                   child: Padding(
                     padding: const EdgeInsets.all(NexusSpacing.lg),
                     child: Text(
-                      errorText(e),
+                      context.describeError(e),
                       textAlign: TextAlign.center,
                       style: TextStyle(color: t.textMuted, fontSize: 12),
                     ),
@@ -349,7 +353,7 @@ class _SidebarState extends ConsumerState<Sidebar> {
                   if (filtered.isEmpty) {
                     return Center(
                       child: Text(
-                        'No chats yet',
+                        l10n.sidebarNoChats,
                         style: TextStyle(color: t.textMuted, fontSize: 12),
                       ),
                     );
@@ -378,31 +382,31 @@ class _SidebarState extends ConsumerState<Sidebar> {
             // ── Quick links ──────────────────────────────────────────
             _SidebarLink(
               icon: Icons.menu_book_rounded,
-              label: 'Documents',
+              label: l10n.sidebarDocuments,
               active: widget.location.startsWith(AppRoutes.documents),
               onTap: () => _go(AppRoutes.documents),
             ),
             _SidebarLink(
               icon: Icons.collections_bookmark_rounded,
-              label: 'Collections',
+              label: l10n.sidebarCollections,
               active: widget.location.startsWith(AppRoutes.collections),
               onTap: () => _go(AppRoutes.collections),
             ),
             _SidebarLink(
               icon: Icons.smart_toy_outlined,
-              label: 'Assistants',
+              label: l10n.sidebarAssistants,
               active: widget.location.startsWith(AppRoutes.assistants),
               onTap: () => _go(AppRoutes.assistants),
             ),
             _SidebarLink(
               icon: Icons.psychology_outlined,
-              label: 'Memory',
+              label: l10n.sidebarMemory,
               active: widget.location.startsWith(AppRoutes.memory),
               onTap: () => _go(AppRoutes.memory),
             ),
             _SidebarLink(
               icon: Icons.settings_rounded,
-              label: 'Settings',
+              label: l10n.sidebarSettings,
               active: widget.location.startsWith(AppRoutes.settings),
               onTap: () => _go(AppRoutes.settings),
             ),
@@ -429,9 +433,9 @@ class _SidebarState extends ConsumerState<Sidebar> {
                     if (v == 'settings') _go(AppRoutes.settings);
                     if (v == 'logout') _logout();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'settings', child: Text('Settings')),
-                    PopupMenuItem(value: 'logout', child: Text('Sign out')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'settings', child: Text(l10n.sidebarSettings)),
+                    PopupMenuItem(value: 'logout', child: Text(l10n.sidebarSignOut)),
                   ],
                   child: Container(
                     padding: const EdgeInsets.all(NexusSpacing.md),
@@ -528,6 +532,7 @@ class _SearchResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final hits = results;
     return ListView(
@@ -536,7 +541,10 @@ class _SearchResults extends StatelessWidget {
         if (chats.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
-            child: Text('No chat titles match', style: TextStyle(color: t.textMuted, fontSize: 12)),
+            child: Text(
+              l10n.sidebarNoTitleMatch,
+              style: TextStyle(color: t.textMuted, fontSize: 12),
+            ),
           )
         else
           for (final s in chats)
@@ -548,11 +556,16 @@ class _SearchResults extends StatelessWidget {
               onDelete: () => onDelete(s),
             ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(NexusSpacing.sm, NexusSpacing.md, NexusSpacing.sm, 6),
+          padding: const EdgeInsetsDirectional.fromSTEB(
+            NexusSpacing.sm,
+            NexusSpacing.md,
+            NexusSpacing.sm,
+            6,
+          ),
           child: Row(
             children: [
               Text(
-                'MESSAGES',
+                l10n.sidebarMessages,
                 style: TextStyle(
                   color: t.textMuted,
                   fontSize: 10,
@@ -583,13 +596,16 @@ class _SearchResults extends StatelessWidget {
         else if (hits != null && hits.isEmpty && !searching)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
-            child: Text('No messages match', style: TextStyle(color: t.textMuted, fontSize: 12)),
+            child: Text(
+              l10n.sidebarNoMessagesMatch,
+              style: TextStyle(color: t.textMuted, fontSize: 12),
+            ),
           )
         else if (hits == null && !searching)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.sm, vertical: 6),
             child: Text(
-              'Type at least two characters',
+              l10n.sidebarTypeTwoChars,
               style: TextStyle(color: t.textMuted, fontSize: 12),
             ),
           )
@@ -678,6 +694,7 @@ class _SessionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -717,6 +734,7 @@ class _SessionTile extends StatelessWidget {
                   ),
                 ),
                 PopupMenuButton<String>(
+                  tooltip: l10n.commonMore,
                   icon: Icon(Icons.more_horiz_rounded, size: 16, color: t.textMuted),
                   iconSize: 16,
                   padding: EdgeInsets.zero,
@@ -724,9 +742,9 @@ class _SessionTile extends StatelessWidget {
                     if (v == 'rename') onRename();
                     if (v == 'delete') onDelete();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'rename', child: Text(l10n.sidebarRename)),
+                    PopupMenuItem(value: 'delete', child: Text(l10n.commonDelete)),
                   ],
                 ),
               ],
@@ -822,20 +840,21 @@ class _RenameDialogState extends State<_RenameDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
-      title: const Text('Rename chat'),
+      title: Text(l10n.sidebarRenameChat),
       content: TextField(
         controller: _ctrl,
         autofocus: true,
-        decoration: const InputDecoration(hintText: 'Chat name'),
+        decoration: InputDecoration(hintText: l10n.sidebarChatNameHint),
         onSubmitted: (_) => _submit(),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Save'),
+          child: Text(l10n.commonSave),
         ),
       ],
     );

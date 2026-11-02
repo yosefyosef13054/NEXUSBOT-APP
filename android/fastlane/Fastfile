@@ -1,0 +1,48 @@
+# NexusBot — Android lanes.
+#
+#   cd android && bundle exec fastlane internal
+#
+# Environment:
+#   API_BASE_URL                    backend the build talks to (--dart-define)
+#   SENTRY_DSN                      optional crash reporting DSN (--dart-define)
+#   PLAY_SERVICE_ACCOUNT_JSON_PATH  Play Console service-account JSON (see Appfile)
+#   ANDROID_PACKAGE_NAME            application id (defaults to com.example.nexusbot)
+#   SKIP_BUILD=1                    upload the AAB already in build/ instead of building
+#
+# Signing comes from android/key.properties (see app/build.gradle.kts).
+
+default_platform(:android)
+
+AAB_PATH = File.expand_path("../../build/app/outputs/bundle/release/app-release.aab", __dir__)
+
+def flutter_defines
+  defines = ["--dart-define=API_BASE_URL=#{ENV.fetch('API_BASE_URL', 'https://api.example.com/api/v1')}"]
+  defines << "--dart-define=SENTRY_DSN=#{ENV['SENTRY_DSN']}" if ENV["SENTRY_DSN"].to_s != ""
+  defines.join(" ")
+end
+
+platform :android do
+  desc "Build the release App Bundle (flutter build appbundle)"
+  lane :build do
+    Dir.chdir("../..") do
+      sh("flutter pub get")
+      sh("flutter gen-l10n")
+      sh("flutter build appbundle --release #{flutter_defines}")
+    end
+  end
+
+  desc "Build (unless SKIP_BUILD=1) and upload the AAB to the Play internal testing track"
+  lane :internal do
+    build unless ENV["SKIP_BUILD"] == "1"
+    UI.user_error!("No AAB at #{AAB_PATH}") unless File.exist?(AAB_PATH)
+    upload_to_play_store(
+      track: "internal",
+      aab: AAB_PATH,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+      release_status: "draft"
+    )
+  end
+end

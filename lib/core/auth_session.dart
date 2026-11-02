@@ -49,6 +49,11 @@ class TokenRefresher {
   /// Whether a refresh is currently in flight.
   bool get refreshing => _inFlight != null;
 
+  /// True when the most recent refresh attempt failed for a transport reason
+  /// (no network, a server error): the tokens were kept and may well be
+  /// valid, so a 401 seen right after is not a verdict on the session.
+  bool lastRefreshFailedTransiently = false;
+
   /// Exchanges the stored refresh token for a new pair and stores it.
   ///
   /// Returns the new access token, or `null` when there is no refresh token
@@ -65,13 +70,17 @@ class TokenRefresher {
     try {
       pair = await _refresh(refreshToken);
     } on ApiException catch (e) {
-      if (_isDefinitiveRejection(e)) await _signOut();
+      final definitive = _isDefinitiveRejection(e);
+      lastRefreshFailedTransiently = !definitive;
+      if (definitive) await _signOut();
       return null;
     } catch (_) {
       // Transport failure: keep the tokens, the next request will retry.
+      lastRefreshFailedTransiently = true;
       return null;
     }
 
+    lastRefreshFailedTransiently = false;
     await _tokens.writeTokens(access: pair.accessToken, refresh: pair.refreshToken);
     return pair.accessToken;
   }

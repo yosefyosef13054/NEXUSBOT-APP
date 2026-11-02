@@ -8,6 +8,8 @@ import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../models/model_info.dart';
@@ -33,6 +35,10 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toastError(Object e) {
+    if (mounted) _toast(context.describeError(e));
+  }
+
   void _refresh() {
     ref.invalidate(orgDetailProvider(widget.orgId));
     ref.invalidate(orgMembersProvider(widget.orgId));
@@ -45,14 +51,16 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
       ref.invalidate(orgDetailProvider(widget.orgId));
       ref.invalidate(orgListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _rename(Org org) async {
+    final l10n = context.l10n;
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => _TextDialog(title: 'Rename workspace', hint: 'Name', initial: org.name),
+      builder: (_) =>
+          _TextDialog(title: l10n.orgRenameTitle, hint: l10n.orgRenameHint, initial: org.name),
     );
     if (name == null || name.isEmpty || name == org.name || !mounted) return;
     await _patch(name: name);
@@ -90,7 +98,13 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
     ref.invalidate(orgMembersProvider(widget.orgId));
     ref.invalidate(orgDetailProvider(widget.orgId));
     ref.invalidate(orgListProvider);
-    _toast('${result.member.displayName} added as ${result.member.role.label.toLowerCase()}');
+    final l10n = context.l10n;
+    _toast(
+      l10n.orgMemberAdded(
+        result.member.displayName,
+        result.member.role.localized(l10n).toLowerCase(),
+      ),
+    );
   }
 
   Future<void> _setRole(OrgMember m, OrgRole role) async {
@@ -99,26 +113,26 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
       await repo.updateMemberRole(widget.orgId, m.userId, role);
       ref.invalidate(orgMembersProvider(widget.orgId));
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _remove(OrgMember m, {required bool self}) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(self ? 'Leave workspace?' : 'Remove member?'),
-        content: Text(
-          self
-              ? 'You will lose access to this workspace\'s chats and documents.'
-              : '${m.displayName} will lose access to this workspace.',
-        ),
+        title: Text(self ? l10n.orgLeaveTitle : l10n.orgRemoveMemberTitle),
+        content: Text(self ? l10n.orgLeaveBody : l10n.orgRemoveMemberBody(m.displayName)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: Text(self ? 'Leave' : 'Remove'),
+            child: Text(self ? l10n.orgLeave : l10n.commonRemove),
           ),
         ],
       ),
@@ -137,12 +151,13 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
       ref.invalidate(orgMembersProvider(widget.orgId));
       ref.invalidate(orgDetailProvider(widget.orgId));
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final org = ref.watch(orgDetailProvider(widget.orgId));
     final members = ref.watch(orgMembersProvider(widget.orgId));
@@ -155,15 +170,15 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
         leading: context.isMobile ? const MenuButton() : null,
         title: Text(
           org.valueOrNull?.isPersonal == true
-              ? 'Personal workspace'
-              : (org.valueOrNull?.name ?? 'Workspace'),
+              ? l10n.orgPersonalWorkspace
+              : (org.valueOrNull?.name ?? l10n.orgWorkspace),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: t.textPrimary),
         ),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refresh,
           ),
@@ -179,10 +194,13 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
         ),
         error: (e, _) => EmptyState(
           icon: Icons.cloud_off_rounded,
-          title: 'Could not load the workspace',
-          subtitle: errorText(e),
-          action:
-              NexusGhostButton(label: 'Retry', icon: Icons.refresh_rounded, onPressed: _refresh),
+          title: l10n.orgLoadFailed,
+          subtitle: context.describeError(e),
+          action: NexusGhostButton(
+            label: l10n.commonRetry,
+            icon: Icons.refresh_rounded,
+            onPressed: _refresh,
+          ),
         ),
         data: (o) {
           final canManage = o.canManage;
@@ -196,22 +214,22 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
                   _HeaderCard(org: o, onRename: canManage ? () => _rename(o) : null),
                   const SizedBox(height: NexusSpacing.xl),
                   _Section(
-                    label: 'BUDGET',
+                    label: l10n.sectionBudget,
                     children: [
                       _ValueTile(
                         icon: Icons.payments_outlined,
-                        title: 'Spending per month',
+                        title: l10n.orgSpendingPerMonth,
                         value: o.settings.budgetUsdPerMonth == null
-                            ? 'No limit'
+                            ? l10n.orgNoLimit
                             : formatUsd(o.settings.budgetUsdPerMonth!),
                         onTap: canManage ? () => _editBudgets(o) : null,
                       ),
                       const _Divider(),
                       _ValueTile(
                         icon: Icons.token_outlined,
-                        title: 'Tokens per month',
+                        title: l10n.orgTokensPerMonth,
                         value: o.settings.budgetTokensPerMonth == null
-                            ? 'No limit'
+                            ? l10n.orgNoLimit
                             : formatTokens(o.settings.budgetTokensPerMonth!),
                         onTap: canManage ? () => _editBudgets(o) : null,
                       ),
@@ -219,8 +237,8 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
                         const _Divider(),
                         _ValueTile(
                           icon: Icons.bar_chart_rounded,
-                          title: 'Usage report',
-                          value: 'By member, model or day',
+                          title: l10n.orgUsageReport,
+                          value: l10n.orgUsageReportValue,
                           onTap: () => context.go(AppRoutes.orgUsage(o.id)),
                         ),
                       ],
@@ -228,12 +246,12 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
                   ),
                   const SizedBox(height: NexusSpacing.xl),
                   _Section(
-                    label: 'MODELS',
+                    label: l10n.sectionModels,
                     children: [
                       _ValueTile(
                         icon: Icons.memory_rounded,
-                        title: 'Allowed models',
-                        value: _allowedLabel(o.settings.allowedModels, catalog),
+                        title: l10n.orgAllowedModels,
+                        value: _allowedLabel(l10n, o.settings.allowedModels, catalog),
                         onTap: canManage && catalog.isNotEmpty
                             ? () => _editAllowedModels(o, catalog)
                             : null,
@@ -242,14 +260,12 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
                   ),
                   const SizedBox(height: NexusSpacing.xl),
                   _Section(
-                    label: 'TOOLS',
+                    label: l10n.sectionTools,
                     children: [
                       _ValueTile(
                         icon: Icons.extension_rounded,
-                        title: 'MCP servers',
-                        value: canManage
-                            ? 'External tool servers (Model Context Protocol)'
-                            : 'Only owners and admins can manage MCP servers',
+                        title: l10n.orgMcpServers,
+                        value: canManage ? l10n.orgMcpValueAdmin : l10n.orgMcpValueMember,
                         onTap: canManage ? () => context.go(AppRoutes.orgMcp(o.id)) : null,
                       ),
                     ],
@@ -275,17 +291,17 @@ class _OrgSettingsScreenState extends ConsumerState<OrgSettingsScreen> {
           ? FloatingActionButton.extended(
               onPressed: _invite,
               icon: const Icon(Icons.person_add_alt_1_rounded),
-              label: const Text('Invite', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: Text(l10n.orgInvite, style: const TextStyle(fontWeight: FontWeight.w700)),
             )
           : null,
     );
   }
 
-  static String _allowedLabel(List<String>? allowed, ModelCatalog catalog) {
-    if (allowed == null) return 'All models';
-    if (allowed.isEmpty) return 'None';
+  static String _allowedLabel(AppLocalizations l10n, List<String>? allowed, ModelCatalog catalog) {
+    if (allowed == null) return l10n.orgAllModels;
+    if (allowed.isEmpty) return l10n.commonNone;
     if (allowed.length <= 2) return allowed.map(catalog.labelFor).join(', ');
-    return '${allowed.length} models';
+    return l10n.orgModelsCount(allowed.length);
   }
 }
 
@@ -296,6 +312,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Container(
       padding: const EdgeInsets.all(NexusSpacing.lg),
@@ -325,13 +342,16 @@ class _HeaderCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  org.isPersonal ? 'Personal workspace' : org.name,
+                  org.isPersonal ? l10n.orgPersonalWorkspace : org.name,
                   style: TextStyle(color: t.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${org.plan.toUpperCase()} plan · ${org.memberCount} member'
-                  '${org.memberCount == 1 ? '' : 's'} · you are ${org.role.label.toLowerCase()}',
+                  l10n.orgPlanLine(
+                    org.plan.toUpperCase(),
+                    org.memberCount,
+                    org.role.localized(l10n).toLowerCase(),
+                  ),
                   style: TextStyle(color: t.textMuted, fontSize: 12.5),
                 ),
               ],
@@ -339,7 +359,7 @@ class _HeaderCard extends StatelessWidget {
           ),
           if (onRename != null && !org.isPersonal)
             IconButton(
-              tooltip: 'Rename',
+              tooltip: l10n.orgRenameTooltip,
               icon: Icon(Icons.edit_outlined, size: 18, color: t.textSecondary),
               onPressed: onRename,
             ),
@@ -370,9 +390,10 @@ class _MembersSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return _Section(
-      label: 'MEMBERS',
+      label: l10n.sectionMembers,
       children: [
         members.when(
           loading: () => const Padding(
@@ -384,9 +405,12 @@ class _MembersSection extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(errorText(e), style: TextStyle(color: t.textSecondary, fontSize: 13)),
+                  child: Text(
+                    context.describeError(e),
+                    style: TextStyle(color: t.textSecondary, fontSize: 13),
+                  ),
                 ),
-                TextButton(onPressed: onRetry, child: const Text('Retry')),
+                TextButton(onPressed: onRetry, child: Text(l10n.commonRetry)),
               ],
             ),
           ),
@@ -412,18 +436,19 @@ class _MembersSection extends StatelessWidget {
               if (list.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(NexusSpacing.lg),
-                  child: Text('No members', style: TextStyle(color: t.textMuted, fontSize: 13)),
+                  child:
+                      Text(l10n.orgNoMembers, style: TextStyle(color: t.textMuted, fontSize: 13)),
                 ),
               if (onInvite == null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
+                  padding: const EdgeInsetsDirectional.fromSTEB(
                     NexusSpacing.lg,
                     NexusSpacing.sm,
                     NexusSpacing.lg,
                     NexusSpacing.md,
                   ),
                   child: Text(
-                    'Only owners and admins can invite members or change roles.',
+                    l10n.orgInviteOnlyAdmins,
                     style: TextStyle(color: t.textMuted, fontSize: 11.5),
                   ),
                 ),
@@ -452,6 +477,7 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final m = member;
     final hasMenu = onSetRole != null || onRemove != null;
@@ -477,7 +503,7 @@ class _MemberTile extends StatelessWidget {
           ),
           if (isMe) ...[
             const SizedBox(width: 6),
-            Text('(you)', style: TextStyle(color: t.textMuted, fontSize: 12)),
+            Text(l10n.orgYou, style: TextStyle(color: t.textMuted, fontSize: 12)),
           ],
           const SizedBox(width: NexusSpacing.sm),
           RoleChip(role: m.role),
@@ -488,6 +514,7 @@ class _MemberTile extends StatelessWidget {
           : null,
       trailing: hasMenu
           ? PopupMenuButton<String>(
+              tooltip: l10n.commonMore,
               icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
               onSelected: (v) {
                 if (v == 'admin') onSetRole?.call(OrgRole.admin);
@@ -496,11 +523,14 @@ class _MemberTile extends StatelessWidget {
               },
               itemBuilder: (_) => [
                 if (onSetRole != null && m.role != OrgRole.admin)
-                  const PopupMenuItem(value: 'admin', child: Text('Make admin')),
+                  PopupMenuItem(value: 'admin', child: Text(l10n.orgMakeAdmin)),
                 if (onSetRole != null && m.role != OrgRole.member)
-                  const PopupMenuItem(value: 'member', child: Text('Make member')),
+                  PopupMenuItem(value: 'member', child: Text(l10n.orgMakeMember)),
                 if (onRemove != null)
-                  PopupMenuItem(value: 'remove', child: Text(isMe ? 'Leave workspace' : 'Remove')),
+                  PopupMenuItem(
+                    value: 'remove',
+                    child: Text(isMe ? l10n.orgLeaveWorkspace : l10n.commonRemove),
+                  ),
               ],
             )
           : null,
@@ -529,7 +559,7 @@ class RoleChip extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
-        role.label.toUpperCase(),
+        role.localized(context.l10n).toUpperCase(),
         style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1),
       ),
     );
@@ -563,6 +593,7 @@ class _TextDialogState extends State<_TextDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       title: Text(widget.title),
       content: TextField(
@@ -572,11 +603,11 @@ class _TextDialogState extends State<_TextDialog> {
         onSubmitted: (_) => _submit(),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Save'),
+          child: Text(l10n.commonSave),
         ),
       ],
     );
@@ -615,7 +646,7 @@ class _BudgetDialogState extends State<_BudgetDialog> {
     final tokens = tokensText.isEmpty ? null : int.tryParse(tokensText);
     if ((usdText.isNotEmpty && (usd == null || usd < 0)) ||
         (tokensText.isNotEmpty && (tokens == null || tokens < 0))) {
-      setState(() => _error = 'Enter a positive number, or leave a field empty for no limit');
+      setState(() => _error = context.l10n.orgBudgetInvalid);
       return;
     }
     Navigator.of(context).pop(
@@ -630,25 +661,22 @@ class _BudgetDialogState extends State<_BudgetDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
-      title: const Text('Monthly budget'),
+      title: Text(l10n.orgMonthlyBudget),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'When a budget is spent, members cannot start new turns until the '
-            'month rolls over. Leave a field empty for no limit.',
-            style: TextStyle(color: t.textSecondary, fontSize: 13),
-          ),
+          Text(l10n.orgBudgetBody, style: TextStyle(color: t.textSecondary, fontSize: 13)),
           const SizedBox(height: NexusSpacing.md),
           TextField(
             controller: _usd,
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-            decoration: const InputDecoration(hintText: 'Spending (USD)', prefixText: '\$ '),
+            decoration: InputDecoration(hintText: l10n.orgSpendingUsdHint, prefixText: '\$ '),
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: NexusSpacing.md),
@@ -656,17 +684,21 @@ class _BudgetDialogState extends State<_BudgetDialog> {
             controller: _tokens,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(hintText: 'Tokens', errorText: _error, errorMaxLines: 2),
+            decoration: InputDecoration(
+              hintText: l10n.orgTokensHint,
+              errorText: _error,
+              errorMaxLines: 2,
+            ),
             onSubmitted: (_) => _submit(),
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Save'),
+          child: Text(l10n.commonSave),
         ),
       ],
     );
@@ -695,9 +727,10 @@ class _AllowedModelsDialogState extends State<_AllowedModelsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
-      title: const Text('Allowed models'),
+      title: Text(l10n.orgAllowedModels),
       content: SizedBox(
         width: 420,
         child: ListView(
@@ -708,9 +741,9 @@ class _AllowedModelsDialogState extends State<_AllowedModelsDialog> {
               onChanged: (v) => setState(() => _all = v),
               activeTrackColor: NexusColors.crimson,
               contentPadding: EdgeInsets.zero,
-              title: const Text('All models', style: TextStyle(fontSize: 14)),
+              title: Text(l10n.orgAllModels, style: const TextStyle(fontSize: 14)),
               subtitle: Text(
-                'Members may pick any model the server offers.',
+                l10n.orgAllModelsSubtitle,
                 style: TextStyle(color: t.textMuted, fontSize: 12),
               ),
             ),
@@ -737,13 +770,13 @@ class _AllowedModelsDialogState extends State<_AllowedModelsDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(
             _AllowedModelsResult(_all ? null : _checked.toList()),
           ),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Save'),
+          child: Text(l10n.commonSave),
         ),
       ],
     );
@@ -778,9 +811,10 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
   }
 
   Future<void> _submit() async {
+    final l10n = context.l10n;
     final email = _email.text.trim();
     if (email.isEmpty || !email.contains('@')) {
-      setState(() => _error = 'Enter the member\'s email address');
+      setState(() => _error = l10n.orgInviteEmailRequired);
       return;
     }
     setState(() {
@@ -796,14 +830,14 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
       if (!mounted) return;
       setState(() {
         _error = e.isNotFound
-            ? 'No NexusBot account uses that email — ask them to register first.'
+            ? l10n.orgInviteNotFound
             : e.isConflict
-                ? 'That person is already a member of this workspace.'
-                : e.userMessage;
+                ? l10n.orgInviteConflict
+                : context.describeError(e);
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = errorText(e));
+      setState(() => _error = context.describeError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -811,17 +845,15 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
-      title: const Text('Invite a member'),
+      title: Text(l10n.orgInviteTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'The person needs a NexusBot account with this email.',
-            style: TextStyle(color: t.textSecondary, fontSize: 13),
-          ),
+          Text(l10n.orgInviteBody, style: TextStyle(color: t.textSecondary, fontSize: 13)),
           const SizedBox(height: NexusSpacing.md),
           TextField(
             controller: _email,
@@ -830,7 +862,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             decoration: InputDecoration(
-              hintText: 'name@company.com',
+              hintText: l10n.orgInviteEmailHint,
               prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
               errorText: _error,
               errorMaxLines: 3,
@@ -842,15 +874,15 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
           ),
           const SizedBox(height: NexusSpacing.md),
           InputDecorator(
-            decoration: const InputDecoration(labelText: 'Role'),
+            decoration: InputDecoration(labelText: l10n.orgRole),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<OrgRole>(
                 isExpanded: true,
                 isDense: true,
                 value: _role,
-                items: const [
-                  DropdownMenuItem(value: OrgRole.member, child: Text('Member')),
-                  DropdownMenuItem(value: OrgRole.admin, child: Text('Admin')),
+                items: [
+                  DropdownMenuItem(value: OrgRole.member, child: Text(l10n.roleMember)),
+                  DropdownMenuItem(value: OrgRole.admin, child: Text(l10n.roleAdmin)),
                 ],
                 onChanged: _busy ? null : (v) => setState(() => _role = v ?? OrgRole.member),
               ),
@@ -861,7 +893,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         FilledButton.icon(
           onPressed: _busy ? null : _submit,
@@ -873,7 +905,7 @@ class _InviteDialogState extends ConsumerState<_InviteDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : const Icon(Icons.person_add_alt_1_rounded, size: 16),
-          label: Text(_busy ? 'Inviting…' : 'Invite'),
+          label: Text(_busy ? l10n.orgInviting : l10n.orgInvite),
         ),
       ],
     );
@@ -896,7 +928,7 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: NexusSpacing.sm),
+          padding: const EdgeInsetsDirectional.only(start: 4, bottom: NexusSpacing.sm),
           child: Text(
             label,
             style: TextStyle(

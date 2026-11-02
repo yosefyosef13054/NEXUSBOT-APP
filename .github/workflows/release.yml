@@ -1,0 +1,186 @@
+name: Release
+
+# Tag a commit `v1.4.0` (any `v*`) to build the Android App Bundle + APK, the
+# unsigned iOS archive and the web bundle, and attach them to the workflow run.
+# When the store secrets exist the fastlane lanes publish to the Play internal
+# track and to TestFlight; without them the builds are produced unsigned and
+# simply uploaded as artifacts. `ci.yml` is untouched.
+#
+# Repository variables / secrets (see fastlane/README.md):
+#   vars.API_BASE_URL                       backend URL baked into the builds
+#   secrets.SENTRY_DSN                      optional crash reporting
+#   secrets.ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+#   secrets.ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD   release signing
+#   secrets.PLAY_SERVICE_ACCOUNT_JSON       Play Console service account (JSON)
+#   secrets.APP_STORE_CONNECT_API_KEY_ID / APP_STORE_CONNECT_ISSUER_ID /
+#   secrets.APP_STORE_CONNECT_API_KEY_CONTENT (base64 .p8) / APPLE_TEAM_ID
+#   secrets.MATCH_GIT_URL / MATCH_PASSWORD  optional, iOS signing through match
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.com/api/v1' }}
+
+jobs:
+  android:
+    name: Android (AAB + APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Write release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          cat > android/key.properties <<EOF
+          storeFile=app/release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Build App Bundle
+        run: >
+          flutter build appbundle --release
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+          --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+      - name: Build APK
+        run: >
+          flutter build apk --release
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+          --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ github.ref_name }}
+          path: |
+            build/app/outputs/bundle/release/app-release.aab
+            build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - uses: ruby/setup-ruby@v1
+        if: env.HAS_KEYSTORE == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: android
+
+      - name: Upload to the Play internal track (fastlane)
+        if: env.HAS_KEYSTORE == 'true' && env.HAS_PLAY_ACCOUNT == 'true'
+        working-directory: android
+        env:
+          SKIP_BUILD: '1'
+          PLAY_SERVICE_ACCOUNT_JSON_PATH: ${{ runner.temp }}/play-service-account.json
+        run: |
+          printf '%s' '${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}' > "$PLAY_SERVICE_ACCOUNT_JSON_PATH"
+          bundle exec fastlane internal
+
+  ios:
+    name: iOS (archive)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      HAS_ASC_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Build unsigned archive
+        run: >
+          flutter build ipa --release --no-codesign
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+          --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive-${{ github.ref_name }}
+          path: build/ios/archive
+          if-no-files-found: error
+
+      - uses: ruby/setup-ruby@v1
+        if: env.HAS_ASC_KEY == 'true'
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Upload to TestFlight (fastlane)
+        if: env.HAS_ASC_KEY == 'true'
+        working-directory: ios
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        run: bundle exec fastlane beta
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Build
+        run: >
+          flutter build web --release
+          --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
+          --dart-define=SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ github.ref_name }}
+          path: build/web
+          if-no-files-found: error

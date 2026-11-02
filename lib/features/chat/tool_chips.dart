@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/pretty_json.dart';
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import 'chat_models.dart';
 
 /// Collapsible "Tool: name" chips for a group of tool runs — the live strip
@@ -59,6 +61,7 @@ class _ToolPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final (icon, color) = toolStatusIcon(call.status, t);
     final latency = call.latencyMs;
@@ -80,7 +83,7 @@ class _ToolPill extends StatelessWidget {
               const Icon(Icons.build_rounded, size: 12, color: NexusColors.crimson),
               const SizedBox(width: 4),
               Text(
-                'Tool: ${call.tool}',
+                l10n.toolChip(call.tool),
                 style: TextStyle(
                   color: t.textPrimary,
                   fontSize: 11,
@@ -93,7 +96,7 @@ class _ToolPill extends StatelessWidget {
               if (latency != null) ...[
                 const SizedBox(width: 4),
                 Text(
-                  _fmtLatency(latency),
+                  formatLatency(l10n, latency),
                   style: TextStyle(color: t.textMuted, fontSize: 10, fontWeight: FontWeight.w600),
                 ),
               ],
@@ -117,6 +120,7 @@ class _ToolDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final input = prettyJson(call.input);
     final output = call.output ?? '';
@@ -143,7 +147,7 @@ class _ToolDetails extends StatelessWidget {
               if (call.latencyMs != null) ...[
                 const Spacer(),
                 Text(
-                  _fmtLatency(call.latencyMs!),
+                  formatLatency(l10n, call.latencyMs!),
                   style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
               ],
@@ -151,23 +155,21 @@ class _ToolDetails extends StatelessWidget {
           ),
           if (input.isNotEmpty) ...[
             const SizedBox(height: NexusSpacing.sm),
-            _Section(label: 'INPUT', body: input),
+            _Section(label: l10n.toolInput, body: input),
           ],
           if (error != null && error.isNotEmpty) ...[
             const SizedBox(height: NexusSpacing.sm),
-            _Section(label: 'ERROR', body: error, danger: true),
+            _Section(label: l10n.toolError, body: error, danger: true),
           ],
           if (output.isNotEmpty) ...[
             const SizedBox(height: NexusSpacing.sm),
-            _Section(label: 'OUTPUT', body: output),
+            _Section(label: l10n.toolOutput, body: output),
           ],
           if (input.isEmpty && output.isEmpty && (error == null || error.isEmpty))
             Padding(
               padding: const EdgeInsets.only(top: NexusSpacing.sm),
               child: Text(
-                call.status == ToolCallStatus.denied
-                    ? 'This tool call was denied.'
-                    : 'No input or output recorded.',
+                call.status == ToolCallStatus.denied ? l10n.toolDeniedBody : l10n.toolNoIo,
                 style: TextStyle(color: t.textMuted, fontSize: 12),
               ),
             ),
@@ -209,6 +211,8 @@ class _Section extends StatelessWidget {
           ),
           child: SelectableText(
             body,
+            // Tool payloads are code / JSON: always laid out left to right.
+            textDirection: TextDirection.ltr,
             style: GoogleFonts.jetBrainsMono(color: t.textPrimary, fontSize: 12, height: 1.45),
           ),
         ),
@@ -231,7 +235,7 @@ class _StatusLabel extends StatelessWidget {
         Icon(icon, size: 12, color: color),
         const SizedBox(width: 3),
         Text(
-          status.name.toUpperCase(),
+          status.localized(context.l10n),
           style:
               TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
@@ -248,5 +252,7 @@ class _StatusLabel extends StatelessWidget {
       ToolCallStatus.unknown => (Icons.help_outline_rounded, t.textMuted),
     };
 
-String _fmtLatency(int ms) =>
-    ms < 1000 ? '$ms ms' : '${(ms / 1000).toStringAsFixed(ms < 10000 ? 1 : 0)} s';
+/// `12 ms` / `1.4 s` / `12 s`.
+String formatLatency(AppLocalizations l10n, int ms) => ms < 1000
+    ? l10n.toolLatencyMs(ms)
+    : l10n.toolLatencyS((ms / 1000).toStringAsFixed(ms < 10000 ? 1 : 0));

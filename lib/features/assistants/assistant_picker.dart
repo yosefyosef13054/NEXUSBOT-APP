@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import '../models/model_info.dart';
 import '../models/models_repository.dart';
 import 'assistant_model.dart';
@@ -64,6 +65,7 @@ class _AssistantPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.8;
     return SafeArea(
@@ -92,12 +94,12 @@ class _AssistantPickerSheet extends StatelessWidget {
               ),
               const SizedBox(height: NexusSpacing.md),
               Text(
-                'Start a chat with…',
+                l10n.assistantPickerTitle,
                 style: TextStyle(color: t.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
               Text(
-                'An assistant brings its own instructions, model, tools and knowledge.',
+                l10n.assistantPickerSubtitle,
                 style: TextStyle(color: t.textSecondary, fontSize: 12.5),
               ),
               const SizedBox(height: NexusSpacing.sm),
@@ -107,8 +109,8 @@ class _AssistantPickerSheet extends StatelessWidget {
                   children: [
                     _PickerRow(
                       leading: const AssistantAvatar(assistant: null, size: 36),
-                      title: 'Plain chat',
-                      subtitle: 'No assistant — your default model and settings',
+                      title: l10n.assistantPlainChat,
+                      subtitle: l10n.assistantPlainChatSubtitle,
                       selected: selectedId == null,
                       onTap: () => Navigator.of(context).pop(const AssistantChoice(null)),
                     ),
@@ -121,7 +123,7 @@ class _AssistantPickerSheet extends StatelessWidget {
                           if (a.description?.isNotEmpty == true) a.description!,
                         ].join(' · '),
                         selected: selectedId == a.id,
-                        badge: a.isDefault ? 'DEFAULT' : null,
+                        badge: a.isDefault ? l10n.assistantDefaultBadge : null,
                         onTap: () => Navigator.of(context).pop(AssistantChoice(a.id)),
                       ),
                   ],
@@ -229,10 +231,10 @@ class AssistantAvatar extends StatelessWidget {
   }
 }
 
-/// Small `DEFAULT` pill.
+/// Small `DEFAULT` pill (the label defaults to the translated "DEFAULT").
 class DefaultBadge extends StatelessWidget {
-  const DefaultBadge({super.key, this.label = 'DEFAULT'});
-  final String label;
+  const DefaultBadge({super.key, this.label});
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +246,7 @@ class DefaultBadge extends StatelessWidget {
         border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.4)),
       ),
       child: Text(
-        label,
+        label ?? context.l10n.assistantDefaultBadge,
         style: const TextStyle(
           color: NexusColors.crimson,
           fontSize: 9,
@@ -278,10 +280,11 @@ class AssistantMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return PopupMenuButton<String>(
       enabled: enabled,
-      tooltip: 'Assistant for this chat',
+      tooltip: l10n.assistantMenuTooltip,
       onSelected: (v) => onSelected(v == _none ? null : v),
       itemBuilder: (_) => [
         PopupMenuItem(
@@ -289,7 +292,7 @@ class AssistantMenuButton extends StatelessWidget {
           child: _MenuRow(
             selected: currentId == null,
             leading: const AssistantAvatar(assistant: null, size: 26),
-            title: 'Plain chat',
+            title: l10n.assistantPlainChat,
             subtitle: null,
           ),
         ),

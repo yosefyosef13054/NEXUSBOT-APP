@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import 'auth_providers.dart';
 
 class SplashScreen extends ConsumerWidget {
@@ -21,27 +22,27 @@ class SplashScreen extends ConsumerWidget {
       );
     });
 
-    return const Scaffold(
+    return Scaffold(
       body: EmberBackground(
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              NexusLogo(size: 92),
-              SizedBox(height: NexusSpacing.xl),
-              NexusWordmark(fontSize: 38),
-              SizedBox(height: NexusSpacing.sm),
+              const NexusLogo(size: 92),
+              const SizedBox(height: NexusSpacing.xl),
+              const NexusWordmark(fontSize: 38),
+              const SizedBox(height: NexusSpacing.sm),
               Text(
-                'AI ENGINE · LOADING',
-                style: TextStyle(
+                context.l10n.splashLoading,
+                style: const TextStyle(
                   color: NexusColors.crimson,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 4,
                 ),
               ),
-              SizedBox(height: NexusSpacing.xxl),
-              SizedBox(
+              const SizedBox(height: NexusSpacing.xxl),
+              const SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(

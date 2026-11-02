@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import 'memory_model.dart';
@@ -28,6 +29,10 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toastError(Object e) {
+    if (mounted) _toast(context.describeError(e));
+  }
+
   Future<void> _refresh() async {
     ref.invalidate(memoryListProvider);
     try {
@@ -38,9 +43,10 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
   }
 
   Future<void> _add() async {
+    final l10n = context.l10n;
     final draft = await showDialog<_MemoryDraft>(
       context: context,
-      builder: (_) => const _MemoryDialog(title: 'Remember something', confirmLabel: 'Add'),
+      builder: (_) => _MemoryDialog(title: l10n.memoryRememberTitle, confirmLabel: l10n.commonAdd),
     );
     if (draft == null || !mounted) return;
     try {
@@ -48,16 +54,17 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       await repo.create(content: draft.content, kind: draft.kind, importance: draft.importance);
       ref.invalidate(memoryListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _edit(Memory m) async {
+    final l10n = context.l10n;
     final draft = await showDialog<_MemoryDraft>(
       context: context,
       builder: (_) => _MemoryDialog(
-        title: 'Edit memory',
-        confirmLabel: 'Save',
+        title: l10n.memoryEditTitle,
+        confirmLabel: l10n.commonSave,
         initial: _MemoryDraft(content: m.content, kind: m.kind, importance: m.importance),
       ),
     );
@@ -72,7 +79,7 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       );
       ref.invalidate(memoryListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
@@ -81,27 +88,28 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       final repo = await ref.read(memoryRepositoryProvider.future);
       await repo.delete(m.id);
       ref.invalidate(memoryListProvider);
-      _toast('Forgotten');
+      if (mounted) _toast(context.l10n.memoryForgotten);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _clearAll(int count) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Forget everything?'),
-        content: Text(
-          'All $count memor${count == 1 ? 'y' : 'ies'} will be deleted. NexusBot will start '
-          'learning about you again from new chats.',
-        ),
+        title: Text(l10n.memoryForgetAllTitle),
+        content: Text(l10n.memoryForgetAllBody(count)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Forget all'),
+            child: Text(l10n.memoryForgetAll),
           ),
         ],
       ),
@@ -112,12 +120,13 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       await repo.clearAll();
       ref.invalidate(memoryListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final memories = ref.watch(memoryListProvider);
     final memoryOn = ref.watch(currentUserProvider).valueOrNull?.memoryEnabled ?? true;
@@ -127,16 +136,16 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Memory', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.memoryTitle, style: TextStyle(color: t.textPrimary)),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refresh,
           ),
           if (count > 0)
             IconButton(
-              tooltip: 'Forget everything',
+              tooltip: l10n.memoryForgetEverything,
               icon: const Icon(Icons.delete_sweep_outlined),
               onPressed: () => _clearAll(count),
             ),
@@ -162,10 +171,10 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
                 children: [
                   EmptyState(
                     icon: Icons.cloud_off_rounded,
-                    title: 'Could not load memories',
-                    subtitle: errorText(e),
+                    title: l10n.memoryLoadFailed,
+                    subtitle: context.describeError(e),
                     action: NexusGhostButton(
-                      label: 'Retry',
+                      label: l10n.commonRetry,
                       icon: Icons.refresh_rounded,
                       onPressed: _refresh,
                     ),
@@ -186,7 +195,7 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
                   ),
                   children: [
                     Text(
-                      'What NexusBot remembers',
+                      l10n.memoryHeading,
                       style: TextStyle(
                         color: t.textPrimary,
                         fontSize: 18,
@@ -195,9 +204,7 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Facts, preferences and standing instructions picked up from your chats '
-                      '(or added here) are woven into later conversations. Replies that used '
-                      'memories say so under the message.',
+                      l10n.memoryIntro,
                       style: TextStyle(color: t.textSecondary, fontSize: 12.5, height: 1.4),
                     ),
                     if (!memoryOn) ...[
@@ -208,12 +215,10 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
                     if (list.isEmpty)
                       EmptyState(
                         icon: Icons.psychology_outlined,
-                        title: 'Nothing remembered yet',
-                        subtitle: memoryOn
-                            ? 'Chat a little, or add something NexusBot should keep in mind.'
-                            : 'Memory is off for your account.',
+                        title: l10n.memoryEmptyTitle,
+                        subtitle: memoryOn ? l10n.memoryEmptyOn : l10n.memoryEmptyOff,
                         action: NexusButton(
-                          label: 'Add a memory',
+                          label: l10n.memoryAddOne,
                           icon: Icons.add_rounded,
                           expand: false,
                           onPressed: _add,
@@ -241,7 +246,7 @@ class _MemoryScreenState extends ConsumerState<MemoryScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Add memory', style: TextStyle(fontWeight: FontWeight.w700)),
+        label: Text(l10n.memoryAdd, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -253,6 +258,7 @@ class _MemoryOffBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.md, vertical: NexusSpacing.sm),
@@ -267,11 +273,11 @@ class _MemoryOffBanner extends StatelessWidget {
           const SizedBox(width: NexusSpacing.sm),
           Expanded(
             child: Text(
-              'Memory is off — nothing new is remembered and existing memories are not used.',
+              l10n.memoryOffBanner,
               style: TextStyle(color: t.textPrimary, fontSize: 12.5),
             ),
           ),
-          TextButton(onPressed: onSettings, child: const Text('Settings')),
+          TextButton(onPressed: onSettings, child: Text(l10n.commonSettings)),
         ],
       ),
     );
@@ -287,13 +293,13 @@ class _GroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: NexusSpacing.sm),
+      padding: const EdgeInsetsDirectional.only(start: 4, bottom: NexusSpacing.sm),
       child: Row(
         children: [
           Icon(kind.icon, size: 14, color: NexusColors.crimson),
           const SizedBox(width: 6),
           Text(
-            kind.label.toUpperCase(),
+            kind.localized(context.l10n).toUpperCase(),
             style: TextStyle(
               color: t.textMuted,
               fontSize: 11,
@@ -317,9 +323,12 @@ class _MemoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final m = memory;
     final used = m.lastUsedAt;
+    final locale = Localizations.localeOf(context).toString();
+    final date = DateFormat.yMMMd(locale);
     return Container(
       margin: const EdgeInsets.only(bottom: NexusSpacing.sm),
       padding: const EdgeInsets.all(NexusSpacing.md),
@@ -348,9 +357,9 @@ class _MemoryTile extends StatelessWidget {
                       child: Text(
                         used == null
                             ? (m.createdAt == null
-                                ? 'Never used'
-                                : 'Added ${DateFormat.yMMMd().format(m.createdAt!.toLocal())}')
-                            : 'Used ${DateFormat.yMMMd().format(used.toLocal())}',
+                                ? l10n.memoryNeverUsed
+                                : l10n.memoryAdded(date.format(m.createdAt!.toLocal())))
+                            : l10n.memoryUsed(date.format(used.toLocal())),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: t.textMuted, fontSize: 11),
@@ -362,14 +371,15 @@ class _MemoryTile extends StatelessWidget {
             ),
           ),
           PopupMenuButton<String>(
+            tooltip: l10n.commonMore,
             icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
             onSelected: (v) {
               if (v == 'edit') onEdit();
               if (v == 'delete') onDelete();
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Edit')),
-              PopupMenuItem(value: 'delete', child: Text('Forget')),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'edit', child: Text(l10n.commonEdit)),
+              PopupMenuItem(value: 'delete', child: Text(l10n.memoryForget)),
             ],
           ),
         ],
@@ -387,7 +397,7 @@ class ImportanceDots extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     return Tooltip(
-      message: 'Importance $importance of 5',
+      message: context.l10n.memoryImportanceTooltip(importance),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -395,7 +405,7 @@ class ImportanceDots extends StatelessWidget {
             Container(
               width: 6,
               height: 6,
-              margin: const EdgeInsets.only(right: 2),
+              margin: const EdgeInsetsDirectional.only(end: 2),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: i <= importance ? NexusColors.crimson : t.surfaceHigher,
@@ -441,7 +451,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
   void _submit() {
     final content = _content.text.trim();
     if (content.isEmpty) {
-      setState(() => _error = 'Write what NexusBot should remember');
+      setState(() => _error = context.l10n.memoryContentRequired);
       return;
     }
     Navigator.of(context).pop(
@@ -451,6 +461,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
       title: Text(widget.title),
@@ -465,17 +476,14 @@ class _MemoryDialogState extends State<_MemoryDialog> {
               autofocus: true,
               minLines: 2,
               maxLines: 5,
-              decoration: InputDecoration(
-                hintText: 'e.g. I prefer short answers with code examples',
-                errorText: _error,
-              ),
+              decoration: InputDecoration(hintText: l10n.memoryContentHint, errorText: _error),
               onChanged: (_) {
                 if (_error != null) setState(() => _error = null);
               },
             ),
             const SizedBox(height: NexusSpacing.md),
             InputDecorator(
-              decoration: const InputDecoration(labelText: 'Kind'),
+              decoration: InputDecoration(labelText: l10n.memoryKind),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<MemoryKind>(
                   isExpanded: true,
@@ -483,7 +491,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
                   value: _kind,
                   items: [
                     for (final k in MemoryKind.values)
-                      DropdownMenuItem(value: k, child: Text(k.singular)),
+                      DropdownMenuItem(value: k, child: Text(k.localizedSingular(l10n))),
                   ],
                   onChanged: (v) => setState(() => _kind = v ?? MemoryKind.fact),
                 ),
@@ -492,7 +500,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
             const SizedBox(height: NexusSpacing.md),
             Row(
               children: [
-                Text('Importance', style: TextStyle(color: t.textSecondary, fontSize: 13)),
+                Text(l10n.memoryImportance, style: TextStyle(color: t.textSecondary, fontSize: 13)),
                 const Spacer(),
                 ImportanceDots(importance: _importance.round()),
               ],
@@ -510,7 +518,7 @@ class _MemoryDialogState extends State<_MemoryDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),

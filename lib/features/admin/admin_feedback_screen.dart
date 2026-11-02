@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import 'admin_repository.dart';
@@ -70,32 +70,33 @@ class _AdminFeedbackScreenState extends ConsumerState<AdminFeedbackScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final user = ref.watch(currentUserProvider).valueOrNull;
 
     final Widget body;
     if (user != null && !user.isServerAdmin) {
-      body = const EmptyState(
+      body = EmptyState(
         icon: Icons.lock_outline_rounded,
-        title: 'Administrators only',
-        subtitle: 'Feedback is available to server administrators.',
+        title: l10n.adminOnlyTitle,
+        subtitle: l10n.adminFeedbackOnly,
       );
     } else if (_error != null && _items.isEmpty) {
       body = EmptyState(
         icon: Icons.cloud_off_rounded,
-        title: 'Could not load feedback',
-        subtitle: errorText(_error!),
+        title: l10n.adminFeedbackLoadFailed,
+        subtitle: context.describeError(_error!),
         action: NexusGhostButton(
-          label: 'Retry',
+          label: l10n.commonRetry,
           icon: Icons.refresh_rounded,
           onPressed: () => _loadMore(reset: true),
         ),
       );
     } else if (_items.isEmpty && !_loading) {
-      body = const EmptyState(
+      body = EmptyState(
         icon: Icons.thumbs_up_down_outlined,
-        title: 'No feedback yet',
-        subtitle: 'Thumbs up / down left on replies show up here.',
+        title: l10n.adminFeedbackEmptyTitle,
+        subtitle: l10n.adminFeedbackEmptyBody,
       );
     } else {
       body = ListView.separated(
@@ -116,12 +117,12 @@ class _AdminFeedbackScreenState extends ConsumerState<AdminFeedbackScreen> {
                       )
                     : _hasMore
                         ? NexusGhostButton(
-                            label: 'Load more',
+                            label: l10n.adminLoadMore,
                             icon: Icons.expand_more_rounded,
                             onPressed: _loadMore,
                           )
                         : Text(
-                            '${_items.length} of $_total',
+                            l10n.adminCountOf(_items.length, _total),
                             style: TextStyle(color: t.textMuted, fontSize: 11),
                           ),
               ),
@@ -140,10 +141,10 @@ class _AdminFeedbackScreenState extends ConsumerState<AdminFeedbackScreen> {
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Feedback', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.adminFeedbackTitle, style: TextStyle(color: t.textPrimary)),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _loading ? null : () => _loadMore(reset: true),
           ),
@@ -164,11 +165,13 @@ class _FeedbackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final f = entry;
     final color = f.isPositive ? NexusColors.success : NexusColors.danger;
+    final locale = Localizations.localeOf(context).toString();
     final when =
-        f.createdAt == null ? '' : DateFormat.yMMMd().add_jm().format(f.createdAt!.toLocal());
+        f.createdAt == null ? '' : DateFormat.yMMMd(locale).add_jm().format(f.createdAt!.toLocal());
     final comment = f.comment?.trim() ?? '';
     return Container(
       padding: const EdgeInsets.all(NexusSpacing.lg),
@@ -201,7 +204,7 @@ class _FeedbackTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  comment.isEmpty ? 'No comment' : comment,
+                  comment.isEmpty ? l10n.adminNoComment : comment,
                   style: TextStyle(
                     color: comment.isEmpty ? t.textMuted : t.textPrimary,
                     fontSize: 13.5,
@@ -212,9 +215,10 @@ class _FeedbackTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   [
-                    f.isPositive ? 'Thumbs up' : 'Thumbs down',
+                    f.isPositive ? l10n.adminThumbsUp : l10n.adminThumbsDown,
                     if (when.isNotEmpty) when,
-                    if (f.userId.length >= 4) 'user …${f.userId.substring(f.userId.length - 4)}',
+                    if (f.userId.length >= 4)
+                      l10n.adminUserSuffix(f.userId.substring(f.userId.length - 4)),
                   ].join(' · '),
                   style: TextStyle(color: t.textMuted, fontSize: 11),
                 ),
@@ -225,7 +229,7 @@ class _FeedbackTile extends StatelessWidget {
           TextButton.icon(
             onPressed: f.sessionId.isEmpty ? null : onOpenChat,
             icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
-            label: const Text('Open chat'),
+            label: Text(l10n.adminOpenChat),
           ),
         ],
       ),

@@ -8,6 +8,8 @@ import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../collections/collection_model.dart';
 import '../collections/collections_repository.dart';
@@ -50,6 +52,10 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toastError(Object e) {
+    if (mounted) _toast(context.describeError(e));
+  }
+
   List<Collection> get _collections => ref.read(collectionListProvider).valueOrNull ?? const [];
 
   Future<void> _pickAndUpload() async {
@@ -59,6 +65,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     );
     final picked = result?.files.firstOrNull;
     if (picked == null || picked.path == null || !mounted) return;
+    final l10n = context.l10n;
 
     // Optional collection choice (pre-selects the active filter).
     var collectionId = ref.read(documentCollectionFilterProvider);
@@ -67,8 +74,8 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       final choice = await showDialog<_CollectionChoice>(
         context: context,
         builder: (_) => _CollectionChoiceDialog(
-          title: 'Upload “${picked.name}”',
-          confirmLabel: 'Upload',
+          title: l10n.documentsUploadTitle(picked.name),
+          confirmLabel: l10n.documentsUpload,
           collections: collections,
           initial: collectionId,
         ),
@@ -93,7 +100,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       );
       _afterIngest(uploaded);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     } finally {
       if (mounted) setState(() => _uploadingName = null);
     }
@@ -114,20 +121,21 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
   void _afterIngest(UploadResult result) {
     ref.invalidate(documentListProvider);
     ref.invalidate(collectionListProvider);
+    if (!mounted) return;
+    final l10n = context.l10n;
     _toast(
-      result.queued
-          ? 'Document queued for indexing'
-          : '“${result.document.name}” was already uploaded — showing the existing copy',
+      result.queued ? l10n.documentQueued : l10n.documentDuplicate(result.document.name),
     );
   }
 
   Future<void> _move(Document d) async {
+    final l10n = context.l10n;
     final collections = _collections;
     final choice = await showDialog<_CollectionChoice>(
       context: context,
       builder: (_) => _CollectionChoiceDialog(
-        title: 'Move “${d.name}”',
-        confirmLabel: 'Move',
+        title: l10n.documentsMoveTitle(d.name),
+        confirmLabel: l10n.documentsMove,
         collections: collections,
         initial: d.collectionId,
       ),
@@ -139,22 +147,26 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       ref.invalidate(documentListProvider);
       ref.invalidate(collectionListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _delete(Document d) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete document?'),
-        content: Text('“${d.name}” will be removed.'),
+        title: Text(l10n.documentDeleteTitle),
+        content: Text(l10n.documentDeleteBody(d.name)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Delete'),
+            child: Text(l10n.commonDelete),
           ),
         ],
       ),
@@ -166,12 +178,13 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       ref.invalidate(documentListProvider);
       ref.invalidate(collectionListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final docs = ref.watch(documentListProvider);
     final collections = ref.watch(collectionListProvider).valueOrNull ?? const <Collection>[];
@@ -182,15 +195,15 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Documents', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.documentsTitle, style: TextStyle(color: t.textPrimary)),
         actions: [
           IconButton(
-            tooltip: 'Add from URL',
+            tooltip: l10n.documentsAddFromUrl,
             icon: const Icon(Icons.add_link_rounded),
             onPressed: _uploadingName != null ? null : _addFromUrl,
           ),
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () {
               ref.invalidate(documentListProvider);
@@ -226,22 +239,23 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                 ),
                 error: (e, _) => EmptyState(
                   icon: Icons.cloud_off_rounded,
-                  title: 'Could not load documents',
-                  subtitle: errorText(e),
+                  title: l10n.documentsLoadFailed,
+                  subtitle: context.describeError(e),
                 ),
                 data: (list) {
                   if (list.isEmpty) {
                     return EmptyState(
                       icon: Icons.upload_file_rounded,
                       title: filter == null
-                          ? 'Upload knowledge for NexusBot'
-                          : 'Nothing in “${collectionNames[filter] ?? 'this collection'}” yet',
+                          ? l10n.documentsEmptyTitle
+                          : l10n.documentsEmptyInCollection(
+                              collectionNames[filter] ?? l10n.documentsThisCollection,
+                            ),
                       subtitle: filter == null
-                          ? 'PDFs, DOCX, MD, TXT, HTML — or a web page by URL. Each upload is '
-                              'chunked, embedded, and ready for RAG.'
-                          : 'Upload a file or move documents here from their menu.',
+                          ? l10n.documentsEmptyBody
+                          : l10n.documentsEmptyCollectionBody,
                       action: NexusButton(
-                        label: 'Upload a file',
+                        label: l10n.documentsUploadFile,
                         icon: Icons.upload_rounded,
                         expand: false,
                         onPressed: _uploadingName != null ? null : _pickAndUpload,
@@ -280,7 +294,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               )
             : const Icon(Icons.upload_rounded),
-        label: const Text('Upload', style: TextStyle(fontWeight: FontWeight.w700)),
+        label: Text(l10n.documentsUpload, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -304,7 +318,7 @@ class _CollectionFilterBar extends StatelessWidget {
     Widget chip(String label, String? id, {int? count}) {
       final active = selected == id;
       return Padding(
-        padding: const EdgeInsets.only(right: NexusSpacing.sm),
+        padding: const EdgeInsetsDirectional.only(end: NexusSpacing.sm),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -337,7 +351,7 @@ class _CollectionFilterBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: 6),
         children: [
-          chip('All', null),
+          chip(context.l10n.commonAll, null),
           for (final c in collections) chip(c.name, c.id, count: c.documentCount),
         ],
       ),
@@ -354,12 +368,7 @@ class _UploadProgressBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        NexusSpacing.lg,
-        NexusSpacing.md,
-        NexusSpacing.lg,
-        NexusSpacing.md,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: NexusSpacing.lg, vertical: NexusSpacing.md),
       color: t.surfaceHigh,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,7 +379,7 @@ class _UploadProgressBar extends StatelessWidget {
               const SizedBox(width: NexusSpacing.sm),
               Expanded(
                 child: Text(
-                  'Uploading $name…',
+                  context.l10n.documentsUploading(name),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w700),
@@ -418,6 +427,7 @@ class _DocumentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Container(
       padding: const EdgeInsets.all(NexusSpacing.lg),
@@ -459,7 +469,7 @@ class _DocumentTile extends StatelessWidget {
                   [
                     _fmtBytes(doc.sizeBytes),
                     _shortMime(doc.mimeType),
-                    if (doc.sourceHost != null) 'from ${doc.sourceHost}',
+                    if (doc.sourceHost != null) l10n.documentFrom(doc.sourceHost!),
                     if (collectionName != null) collectionName!,
                   ].join(' · '),
                   maxLines: 1,
@@ -473,14 +483,14 @@ class _DocumentTile extends StatelessWidget {
           const SizedBox(width: 4),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
-            tooltip: 'More',
+            tooltip: l10n.commonMore,
             onSelected: (v) {
               if (v == 'move') onMove();
               if (v == 'delete') onDelete();
             },
             itemBuilder: (_) => [
-              if (canMove) const PopupMenuItem(value: 'move', child: Text('Move to collection…')),
-              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              if (canMove) PopupMenuItem(value: 'move', child: Text(l10n.documentMoveToCollection)),
+              PopupMenuItem(value: 'delete', child: Text(l10n.commonDelete)),
             ],
           ),
         ],
@@ -502,7 +512,7 @@ class _DocumentTile extends StatelessWidget {
     if (mime.contains('word')) return 'DOCX';
     if (mime.contains('markdown')) return 'Markdown';
     if (mime.contains('html')) return 'HTML';
-    if (mime.startsWith('text/')) return 'Text';
+    if (mime.startsWith('text/')) return 'TXT';
     return mime;
   }
 
@@ -522,15 +532,12 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (status) {
-      DocumentStatus.pending => ('PENDING', context.tokens.textMuted),
-      DocumentStatus.processing => (
-          progress == null ? 'INDEXING' : 'INDEXING $progress%',
-          NexusColors.warn,
-        ),
-      DocumentStatus.ready => ('READY', NexusColors.success),
-      DocumentStatus.failed => ('FAILED', NexusColors.crimson),
-      DocumentStatus.unknown => ('?', context.tokens.textMuted),
+    final color = switch (status) {
+      DocumentStatus.pending => context.tokens.textMuted,
+      DocumentStatus.processing => NexusColors.warn,
+      DocumentStatus.ready => NexusColors.success,
+      DocumentStatus.failed => NexusColors.crimson,
+      DocumentStatus.unknown => context.tokens.textMuted,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -540,7 +547,7 @@ class _StatusBadge extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
-        label,
+        status.localized(context.l10n, progress: progress),
         style: TextStyle(
           color: color,
           fontSize: 10,
@@ -586,6 +593,7 @@ class _CollectionChoiceDialogState extends State<_CollectionChoiceDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       title: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       content: _CollectionDropdown(
@@ -594,7 +602,7 @@ class _CollectionChoiceDialogState extends State<_CollectionChoiceDialog> {
         onChanged: (v) => setState(() => _selected = v),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_CollectionChoice(_selected)),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
@@ -620,15 +628,16 @@ class _CollectionDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return InputDecorator(
-      decoration: const InputDecoration(labelText: 'Collection'),
+      decoration: InputDecoration(labelText: l10n.documentsCollectionLabel),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isExpanded: true,
           isDense: true,
           value: value ?? _none,
           items: [
-            const DropdownMenuItem(value: _none, child: Text('No collection')),
+            DropdownMenuItem(value: _none, child: Text(l10n.documentsNoCollection)),
             for (final c in collections) DropdownMenuItem(value: c.id, child: Text(c.name)),
           ],
           onChanged: (v) => onChanged(v == _none ? null : v),
@@ -667,7 +676,7 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
     final url = _url.text.trim();
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme || !(uri.isScheme('http') || uri.isScheme('https'))) {
-      setState(() => _error = 'Enter a full http(s):// address');
+      setState(() => _error = context.l10n.documentsUrlInvalid);
       return;
     }
     setState(() {
@@ -682,10 +691,10 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
     } on ApiException catch (e) {
       if (!mounted) return;
       // 422: unreachable / unsupported / private URL — the message says which.
-      setState(() => _error = e.statusCode == 422 ? e.message : e.userMessage);
+      setState(() => _error = e.statusCode == 422 ? e.message : context.describeError(e));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = errorText(e));
+      setState(() => _error = context.describeError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -693,15 +702,16 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return AlertDialog(
-      title: const Text('Add from URL'),
+      title: Text(l10n.documentsAddFromUrl),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'NexusBot fetches the page and indexes it like an upload.',
+            l10n.documentsAddFromUrlBody,
             style: TextStyle(color: t.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: NexusSpacing.md),
@@ -711,6 +721,7 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
             enabled: !_busy,
             keyboardType: TextInputType.url,
             autocorrect: false,
+            textDirection: TextDirection.ltr,
             decoration: InputDecoration(
               hintText: 'https://example.com/article',
               prefixIcon: const Icon(Icons.link_rounded, size: 20),
@@ -735,7 +746,7 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         FilledButton.icon(
           onPressed: _busy ? null : _submit,
@@ -747,7 +758,7 @@ class _AddFromUrlDialogState extends ConsumerState<_AddFromUrlDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : const Icon(Icons.download_rounded, size: 16),
-          label: Text(_busy ? 'Fetching…' : 'Add'),
+          label: Text(_busy ? l10n.documentsFetching : l10n.commonAdd),
         ),
       ],
     );

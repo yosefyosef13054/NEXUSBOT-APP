@@ -28,4 +28,16 @@ class Env {
   ///
   ///   flutter run --dart-define=PUSH_PROVIDER=fcm
   static const pushProvider = String.fromEnvironment('PUSH_PROVIDER', defaultValue: 'none');
+
+  /// Sentry DSN; empty (the default) disables crash reporting entirely.
+  ///
+  ///   flutter build apk --dart-define=SENTRY_DSN=https://…@sentry.io/123
+  static const sentryDsn = String.fromEnvironment('SENTRY_DSN');
+
+  /// Reported as the Sentry `environment` tag.
+  static const sentryEnvironment =
+      String.fromEnvironment('SENTRY_ENVIRONMENT', defaultValue: 'production');
+
+  /// Whether crash reporting is compiled in (a DSN was given).
+  static bool get sentryEnabled => sentryDsn.isNotEmpty;
 }

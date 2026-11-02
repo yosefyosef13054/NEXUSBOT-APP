@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/api_exception.dart';
 import '../core/breakpoints.dart';
+import '../core/connectivity.dart';
 import '../core/router.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
-import '../features/assistants/assistant_picker.dart';
 import '../features/chat/chat_models.dart';
 import '../features/chat/chat_repository.dart';
-import '../features/models/models_repository.dart';
+import '../features/chat/new_chat.dart';
+import '../features/chat/send_queue.dart';
+import '../l10n/l10n.dart';
+import 'offline_banner.dart';
 import 'sidebar.dart';
 
 /// App shell rendered by the router's [ShellRoute]: it stays mounted while
 /// the child route (`/`, `/chat/:id`, `/documents`, `/settings`) changes.
 /// Adaptive: drawer on mobile, persistent sidebar on wide layouts.
+///
+/// Also hosts the offline banner and the app-wide keyboard shortcuts
+/// (Ctrl / Cmd + N new chat, Ctrl / Cmd + K search).
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({
     super.key,
@@ -68,12 +74,39 @@ class HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserve
     if (scaffold != null && scaffold.isDrawerOpen) scaffold.closeDrawer();
   }
 
+  /// Ctrl / Cmd + K: focus the sidebar's search field (opening the drawer
+  /// first on mobile).
+  void focusSearch() {
+    final node = ref.read(sidebarSearchFocusProvider);
+    if (context.isWide) {
+      node.requestFocus();
+      return;
+    }
+    openDrawer();
+    WidgetsBinding.instance.addPostFrameCallback((_) => node.requestFocus());
+  }
+
+  Future<void> _newChat() async {
+    await startNewChat(context, ref);
+    if (mounted) closeDrawer();
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final online = ref.watch(onlineProvider);
+    final queue = ref.watch(sendQueueProvider);
 
+    final body = Column(
+      children: [
+        if (!online) OfflineBanner(queued: queue.pendingCount, failed: queue.failedCount),
+        Expanded(child: widget.child),
+      ],
+    );
+
+    final Widget scaffold;
     if (context.isWide) {
-      return Scaffold(
+      scaffold = Scaffold(
         backgroundColor: t.background,
         body: Row(
           children: [
@@ -82,27 +115,58 @@ class HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserve
               location: widget.location,
               width: context.isDesktop ? 280 : 260,
             ),
-            Expanded(child: widget.child),
+            Expanded(child: body),
           ],
         ),
       );
+    } else {
+      scaffold = Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: t.background,
+        drawer: Drawer(
+          backgroundColor: t.surface,
+          width: 300,
+          child: Sidebar(
+            selectedSessionId: widget.selectedSessionId,
+            location: widget.location,
+            width: 300,
+            showClose: closeDrawer,
+            onNavigated: closeDrawer,
+          ),
+        ),
+        body: body,
+      );
     }
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: t.background,
-      drawer: Drawer(
-        backgroundColor: t.surface,
-        width: 300,
-        child: Sidebar(
-          selectedSessionId: widget.selectedSessionId,
-          location: widget.location,
-          width: 300,
-          showClose: closeDrawer,
-          onNavigated: closeDrawer,
-        ),
-      ),
-      body: widget.child,
+    return AppShortcuts(onNewChat: _newChat, onFocusSearch: focusSearch, child: scaffold);
+  }
+}
+
+/// Desktop keyboard shortcuts of the shell. [Focus] with autofocus keeps a
+/// focus node in the subtree so the bindings fire even when no field is
+/// focused; a focused text field passes unhandled keys up to them.
+class AppShortcuts extends StatelessWidget {
+  const AppShortcuts({
+    super.key,
+    required this.onNewChat,
+    required this.onFocusSearch,
+    required this.child,
+  });
+
+  final VoidCallback onNewChat;
+  final VoidCallback onFocusSearch;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): onNewChat,
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): onNewChat,
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): onFocusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): onFocusSearch,
+      },
+      child: Focus(autofocus: true, child: child),
     );
   }
 }
@@ -138,22 +202,10 @@ class _HomeLandingState extends ConsumerState<HomeLanding> {
   }
 
   Future<void> _create() async {
-    final choice = await pickAssistantForNewChat(context, ref);
-    if (choice == null || !mounted) return;
     setState(() => _creating = true);
     try {
-      final repo = await ref.read(chatRepositoryProvider.future);
-      final s = await repo.createSession(
-        model: choice.assistantId == null ? ref.read(defaultModelIdProvider) : null,
-        assistantId: choice.assistantId,
-      );
-      ref.invalidate(sessionListProvider);
-      if (!mounted) return;
-      _redirected = true;
-      context.go(AppRoutes.chat(s.id));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+      final id = await startNewChat(context, ref);
+      if (id != null) _redirected = true;
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -161,6 +213,7 @@ class _HomeLandingState extends ConsumerState<HomeLanding> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     ref.listen(sessionListProvider, (_, next) => _maybeOpenMostRecent(next));
     final sessions = ref.watch(sessionListProvider);
@@ -187,11 +240,10 @@ class _HomeLandingState extends ConsumerState<HomeLanding> {
             )
           : EmptyState(
               icon: Icons.auto_awesome_rounded,
-              title: 'Welcome to NexusBot',
-              subtitle:
-                  'Start a conversation, upload documents to chat with them, or enable tools to let the AI take actions.',
+              title: l10n.homeWelcomeTitle,
+              subtitle: l10n.homeWelcomeSubtitle,
               action: NexusButton(
-                label: 'Start new chat',
+                label: l10n.homeStartNewChat,
                 icon: Icons.add_rounded,
                 loading: _creating,
                 expand: false,
@@ -209,6 +261,7 @@ class MenuButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
+      tooltip: context.l10n.menuOpen,
       icon: const Icon(Icons.menu_rounded),
       onPressed: () => context.findAncestorStateOfType<HomeShellState>()?.openDrawer(),
     );

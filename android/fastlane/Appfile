@@ -1,0 +1,5 @@
+# Play Console service account (JSON key). The release workflow writes the
+# PLAY_SERVICE_ACCOUNT_JSON secret to this path; locally point the variable at
+# your own key file.
+json_key_file(ENV["PLAY_SERVICE_ACCOUNT_JSON_PATH"] || "play-service-account.json")
+package_name(ENV["ANDROID_PACKAGE_NAME"] || "com.example.nexusbot")

@@ -5,6 +5,8 @@ import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../orgs/orgs_repository.dart';
@@ -33,10 +35,10 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
 
   String _describe(Object e) {
     if (e is ApiException) {
-      if (e.isConflict) return 'A server with this name already exists in the workspace.';
+      if (e.isConflict) return context.l10n.mcpDuplicateName;
       if (e.isForbidden) return e.message;
     }
-    return errorText(e);
+    return context.describeError(e);
   }
 
   Future<void> _add({required bool allowStdio}) async {
@@ -49,9 +51,9 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
       final repo = await ref.read(mcpRepositoryProvider.future);
       final created = await repo.create(widget.orgId, draft);
       _refresh();
-      _toast('“${created.name}” added');
+      if (mounted) _toast(context.l10n.mcpAdded(created.name));
     } catch (e) {
-      _toast(_describe(e));
+      if (mounted) _toast(_describe(e));
     }
   }
 
@@ -78,7 +80,7 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
       );
       _refresh();
     } catch (e) {
-      _toast(_describe(e));
+      if (mounted) _toast(_describe(e));
     }
   }
 
@@ -93,25 +95,26 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
       );
       _refresh();
     } catch (e) {
-      _toast(_describe(e));
+      if (mounted) _toast(_describe(e));
     }
   }
 
   Future<void> _delete(MCPServer server) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove server?'),
-        content: Text(
-          '“${server.name}” and its tools will disappear from every chat and assistant '
-          'of this workspace.',
-        ),
+        title: Text(l10n.mcpRemoveTitle),
+        content: Text(l10n.mcpRemoveBody(server.name)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Remove'),
+            child: Text(l10n.commonRemove),
           ),
         ],
       ),
@@ -122,7 +125,7 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
       await repo.delete(widget.orgId, server.id);
       _refresh();
     } catch (e) {
-      _toast(_describe(e));
+      if (mounted) _toast(_describe(e));
     }
   }
 
@@ -140,6 +143,7 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final servers = ref.watch(mcpServersProvider(widget.orgId));
     final org = ref.watch(orgDetailProvider(widget.orgId)).valueOrNull;
@@ -151,14 +155,14 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
         title: Text(
-          org == null ? 'MCP servers' : 'MCP servers · ${org.name}',
+          org == null ? l10n.mcpTitle : l10n.mcpTitleOrg(org.name),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: t.textPrimary),
         ),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refresh,
           ),
@@ -174,23 +178,23 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
         ),
         error: (e, _) => EmptyState(
           icon: Icons.cloud_off_rounded,
-          title: 'Could not load the servers',
-          subtitle: errorText(e),
-          action:
-              NexusGhostButton(label: 'Retry', icon: Icons.refresh_rounded, onPressed: _refresh),
+          title: l10n.mcpLoadFailed,
+          subtitle: context.describeError(e),
+          action: NexusGhostButton(
+            label: l10n.commonRetry,
+            icon: Icons.refresh_rounded,
+            onPressed: _refresh,
+          ),
         ),
         data: (list) {
           if (list.isEmpty) {
             return EmptyState(
               icon: Icons.extension_rounded,
-              title: 'No MCP servers yet',
-              subtitle: canManage
-                  ? 'Register an HTTP or SSE Model Context Protocol server; its tools then '
-                      'appear in the tool picker as mcp:<server>:<tool>.'
-                  : 'Only owners and admins can register MCP servers.',
+              title: l10n.mcpEmptyTitle,
+              subtitle: canManage ? l10n.mcpEmptyBodyAdmin : l10n.mcpEmptyBodyMember,
               action: canManage
                   ? NexusGhostButton(
-                      label: 'Add server',
+                      label: l10n.mcpAddServer,
                       icon: Icons.add_rounded,
                       onPressed: () => _add(allowStdio: allowStdio),
                     )
@@ -205,8 +209,7 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
                 padding: const EdgeInsets.all(NexusSpacing.lg),
                 children: [
                   Text(
-                    'Tools of enabled servers are offered to every chat and assistant of the '
-                    'workspace. Servers marked with a shield ask for approval before a tool runs.',
+                    l10n.mcpIntro,
                     style: TextStyle(color: t.textSecondary, fontSize: 12.5, height: 1.4),
                   ),
                   const SizedBox(height: NexusSpacing.md),
@@ -233,7 +236,7 @@ class _MCPServersScreenState extends ConsumerState<MCPServersScreen> {
           ? FloatingActionButton.extended(
               onPressed: () => _add(allowStdio: allowStdio),
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Add server', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: Text(l10n.mcpAddServer, style: const TextStyle(fontWeight: FontWeight.w700)),
             )
           : null,
     );
@@ -264,12 +267,12 @@ class MCPServerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final s = server;
     final secrets = [
-      if (s.headerKeys.isNotEmpty)
-        '${s.headerKeys.length} header${s.headerKeys.length == 1 ? '' : 's'}',
-      if (s.envKeys.isNotEmpty) '${s.envKeys.length} env var${s.envKeys.length == 1 ? '' : 's'}',
+      if (s.headerKeys.isNotEmpty) l10n.mcpHeaders(s.headerKeys.length),
+      if (s.envKeys.isNotEmpty) l10n.mcpEnvVars(s.envKeys.length),
     ];
     return Container(
       padding: const EdgeInsets.all(NexusSpacing.md),
@@ -311,14 +314,18 @@ class MCPServerTile extends StatelessWidget {
                         _TransportBadge(transport: s.transport),
                         if (s.requiresApproval) ...[
                           const SizedBox(width: 6),
-                          const Tooltip(
-                            message: 'Tools ask for approval before running',
-                            child: Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
+                          Tooltip(
+                            message: l10n.mcpApprovalTooltip,
+                            child:
+                                const Icon(Icons.shield_rounded, size: 14, color: NexusColors.warn),
                           ),
                         ],
                         if (!s.enabled) ...[
                           const SizedBox(width: 6),
-                          Text('disabled', style: TextStyle(color: t.textMuted, fontSize: 11)),
+                          Text(
+                            l10n.mcpDisabled,
+                            style: TextStyle(color: t.textMuted, fontSize: 11),
+                          ),
                         ],
                       ],
                     ),
@@ -327,6 +334,7 @@ class MCPServerTile extends StatelessWidget {
                         s.endpointLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        textDirection: TextDirection.ltr,
                         style: TextStyle(color: t.textMuted, fontSize: 12),
                       ),
                     if (s.description != null && s.description!.trim().isNotEmpty)
@@ -338,7 +346,7 @@ class MCPServerTile extends StatelessWidget {
                       ),
                     if (secrets.isNotEmpty)
                       Text(
-                        '${secrets.join(' · ')} (stored, never shown)',
+                        l10n.mcpSecretsStored(secrets.join(' · ')),
                         style: TextStyle(color: t.textMuted, fontSize: 11),
                       ),
                   ],
@@ -346,21 +354,22 @@ class MCPServerTile extends StatelessWidget {
               ),
               if (canManage)
                 PopupMenuButton<String>(
+                  tooltip: l10n.commonMore,
                   icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
                   onSelected: (v) {
                     if (v == 'test') onTest?.call();
                     if (v == 'edit') onEdit?.call();
                     if (v == 'delete') onDelete?.call();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'test', child: Text('Test connection')),
-                    PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    PopupMenuItem(value: 'delete', child: Text('Remove')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'test', child: Text(l10n.mcpTestConnection)),
+                    PopupMenuItem(value: 'edit', child: Text(l10n.commonEdit)),
+                    PopupMenuItem(value: 'delete', child: Text(l10n.commonRemove)),
                   ],
                 )
               else if (onTest != null)
                 IconButton(
-                  tooltip: 'Test connection',
+                  tooltip: l10n.mcpTestConnection,
                   icon: Icon(Icons.network_check_rounded, size: 18, color: t.textSecondary),
                   onPressed: onTest,
                 ),
@@ -371,13 +380,13 @@ class MCPServerTile extends StatelessWidget {
             Row(
               children: [
                 _SwitchLabel(
-                  label: 'Enabled',
+                  label: l10n.mcpEnabled,
                   value: s.enabled,
                   onChanged: onToggleEnabled,
                 ),
                 const SizedBox(width: NexusSpacing.lg),
                 _SwitchLabel(
-                  label: 'Requires approval',
+                  label: l10n.mcpRequiresApproval,
                   value: s.requiresApproval,
                   onChanged: onToggleApproval,
                 ),
@@ -385,7 +394,7 @@ class MCPServerTile extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onTest,
                   icon: const Icon(Icons.network_check_rounded, size: 16),
-                  label: const Text('Test'),
+                  label: Text(l10n.mcpTest),
                 ),
               ],
             ),
@@ -499,19 +508,20 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
   }
 
   void _submit() {
+    final l10n = context.l10n;
     final name = _name.text.trim();
     if (_isNew && !_namePattern.hasMatch(name)) {
-      setState(() => _error = 'Name: lowercase letters, digits, "-" or "_" (e.g. github)');
+      setState(() => _error = l10n.mcpNameInvalid);
       return;
     }
     final url = _url.text.trim();
     final command = _command.text.trim();
     if (_transport.isRemote && !(url.startsWith('http://') || url.startsWith('https://'))) {
-      setState(() => _error = 'Enter the server URL (http:// or https://)');
+      setState(() => _error = l10n.mcpUrlRequired);
       return;
     }
     if (!_transport.isRemote && command.isEmpty) {
-      setState(() => _error = 'Enter the command that starts the server');
+      setState(() => _error = l10n.mcpCommandRequired);
       return;
     }
     Navigator.of(context).pop(
@@ -534,15 +544,16 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final transports = [
       MCPTransport.http,
       MCPTransport.sse,
       if (widget.allowStdio || _transport == MCPTransport.stdio) MCPTransport.stdio,
     ];
-    final secretHint = _isNew ? '' : ' (leave empty to keep the stored ones)';
+    final secretHint = _isNew ? '' : l10n.mcpKeepStored;
     return AlertDialog(
-      title: Text(_isNew ? 'Add MCP server' : 'Edit “${widget.existing!.name}”'),
+      title: Text(_isNew ? l10n.mcpAddTitle : l10n.mcpEditTitle(widget.existing!.name)),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -555,7 +566,7 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                   controller: _name,
                   autofocus: true,
                   autocorrect: false,
-                  decoration: const InputDecoration(hintText: 'Name (slug, e.g. github)'),
+                  decoration: InputDecoration(hintText: l10n.mcpNameHint),
                   onChanged: (_) {
                     if (_error != null) setState(() => _error = null);
                   },
@@ -563,7 +574,7 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                 const SizedBox(height: NexusSpacing.md),
               ],
               InputDecorator(
-                decoration: const InputDecoration(labelText: 'Transport'),
+                decoration: InputDecoration(labelText: l10n.mcpTransport),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<MCPTransport>(
                     isExpanded: true,
@@ -571,7 +582,7 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                     value: _transport,
                     items: [
                       for (final tr in transports)
-                        DropdownMenuItem(value: tr, child: Text(tr.label)),
+                        DropdownMenuItem(value: tr, child: Text(tr.localized(l10n))),
                     ],
                     onChanged: _isNew ? (v) => setState(() => _transport = v ?? _transport) : null,
                   ),
@@ -583,7 +594,8 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                   controller: _url,
                   autocorrect: false,
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(hintText: 'https://mcp.example.com/sse'),
+                  textDirection: TextDirection.ltr,
+                  decoration: InputDecoration(hintText: l10n.mcpUrlHint),
                 ),
                 const SizedBox(height: NexusSpacing.md),
                 TextField(
@@ -591,24 +603,19 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                   autocorrect: false,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: InputDecoration(
-                    hintText: 'Headers, one per line$secretHint\nAuthorization=Bearer …',
-                  ),
+                  decoration: InputDecoration(hintText: l10n.mcpHeadersHint(secretHint)),
                 ),
               ] else ...[
                 TextField(
                   controller: _command,
                   autocorrect: false,
-                  decoration: const InputDecoration(hintText: 'Command (e.g. npx)'),
+                  decoration: InputDecoration(hintText: l10n.mcpCommandHint),
                 ),
                 const SizedBox(height: NexusSpacing.md),
                 TextField(
                   controller: _args,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    hintText:
-                        'Arguments (space separated, e.g. -y @modelcontextprotocol/server-github)',
-                  ),
+                  decoration: InputDecoration(hintText: l10n.mcpArgsHint),
                 ),
                 const SizedBox(height: NexusSpacing.md),
                 TextField(
@@ -616,9 +623,7 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                   autocorrect: false,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: InputDecoration(
-                    hintText: 'Environment, one per line$secretHint\nGITHUB_TOKEN=…',
-                  ),
+                  decoration: InputDecoration(hintText: l10n.mcpEnvHint(secretHint)),
                 ),
               ],
               const SizedBox(height: NexusSpacing.md),
@@ -626,7 +631,7 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                 controller: _description,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(hintText: 'Description (optional)'),
+                decoration: InputDecoration(hintText: l10n.collectionDescriptionHint),
               ),
               const SizedBox(height: NexusSpacing.sm),
               SwitchListTile(
@@ -634,16 +639,16 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
                 onChanged: (v) => setState(() => _enabled = v),
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Enabled', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.mcpEnabled, style: const TextStyle(fontSize: 14)),
               ),
               SwitchListTile(
                 value: _requiresApproval,
                 onChanged: (v) => setState(() => _requiresApproval = v),
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Tools require approval', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.mcpToolsRequireApproval, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                  'Each call pauses the turn until the user approves it.',
+                  l10n.mcpToolsRequireApprovalSubtitle,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -656,11 +661,11 @@ class _MCPServerDialogState extends State<MCPServerDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: Text(_isNew ? 'Add' : 'Save'),
+          child: Text(_isNew ? l10n.commonAdd : l10n.commonSave),
         ),
       ],
     );
@@ -687,6 +692,7 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.8;
     return SafeArea(
@@ -699,7 +705,7 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Test “${widget.server.name}”',
+                l10n.mcpTestTitle(widget.server.name),
                 style: TextStyle(color: t.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: NexusSpacing.sm),
@@ -708,7 +714,7 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
                   future: _future,
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
-                      return _TestOutcome.failure(errorText(snapshot.error!));
+                      return _TestOutcome.failure(context.describeError(snapshot.error!));
                     }
                     final result = snapshot.data;
                     if (result == null) {
@@ -726,7 +732,7 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
                             ),
                             const SizedBox(width: NexusSpacing.md),
                             Text(
-                              'Connecting…',
+                              l10n.mcpConnecting,
                               style: TextStyle(color: t.textSecondary, fontSize: 13),
                             ),
                           ],
@@ -735,7 +741,7 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
                     }
                     if (!result.ok) {
                       return _TestOutcome.failure(
-                        result.error ?? 'The server did not answer',
+                        result.error ?? l10n.mcpNoAnswer,
                         latencyMs: result.latencyMs,
                       );
                     }
@@ -748,13 +754,13 @@ class _MCPTestSheetState extends ConsumerState<MCPTestSheet> {
                 children: [
                   TextButton(
                     onPressed: () => setState(() => _future = _run()),
-                    child: const Text('Test again'),
+                    child: Text(l10n.mcpTestAgain),
                   ),
                   const Spacer(),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-                    child: const Text('Close'),
+                    child: Text(l10n.commonClose),
                   ),
                 ],
               ),
@@ -776,6 +782,7 @@ class _TestOutcome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     if (error != null) {
       return Row(
@@ -785,7 +792,7 @@ class _TestOutcome extends StatelessWidget {
           const SizedBox(width: NexusSpacing.sm),
           Expanded(
             child: Text(
-              'Connection failed: $error',
+              l10n.mcpConnectionFailed(error!),
               style: TextStyle(color: t.textPrimary, fontSize: 13),
             ),
           ),
@@ -801,17 +808,14 @@ class _TestOutcome extends StatelessWidget {
             const Icon(Icons.check_circle_rounded, size: 18, color: NexusColors.success),
             const SizedBox(width: NexusSpacing.sm),
             Text(
-              'Connected in ${result.latencyMs} ms · ${tools.length} tool${tools.length == 1 ? '' : 's'}',
+              l10n.mcpConnected(result.latencyMs, tools.length),
               style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
         const SizedBox(height: NexusSpacing.sm),
         if (tools.isEmpty)
-          Text(
-            'The server exposes no tools.',
-            style: TextStyle(color: t.textMuted, fontSize: 12.5),
-          ),
+          Text(l10n.mcpNoTools, style: TextStyle(color: t.textMuted, fontSize: 12.5)),
         for (final tool in tools)
           ListTile(
             dense: true,

@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/api_exception.dart';
+import '../../core/app_info.dart';
+import '../../core/biometric_auth.dart';
 import '../../core/breakpoints.dart';
 import '../../core/env.dart';
 import '../../core/preferences.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../auth/auth_repository.dart';
+import '../chat/chat_cache.dart';
 import '../chat/chat_repository.dart';
 import '../models/model_info.dart';
 import '../models/models_repository.dart';
@@ -43,7 +47,9 @@ class SettingsScreen extends ConsumerWidget {
       // The account default still wins the resolution — put the local
       // preference back so the list reflects what the server will use.
       await prefsCtrl.setModel(previous);
-      if (context.mounted) _toast(context, 'Could not save the default model: ${errorText(e)}');
+      if (context.mounted) {
+        _toast(context, context.l10n.settingsSaveModelFailed(context.describeError(e)));
+      }
     }
   }
 
@@ -66,20 +72,41 @@ class SettingsScreen extends ConsumerWidget {
       await repo.setMemoryEnabled(enabled);
       ref.invalidate(currentUserProvider);
     } catch (e) {
-      if (context.mounted) _toast(context, 'Could not update memory: ${errorText(e)}');
+      if (context.mounted) {
+        _toast(context, context.l10n.settingsMemoryUpdateFailed(context.describeError(e)));
+      }
     }
+  }
+
+  // ── Security ─────────────────────────────────────────────────────────
+
+  Future<void> _setBiometric(BuildContext context, WidgetRef ref, bool enabled) async {
+    if (enabled) {
+      final available = await ref.read(biometricAuthenticatorProvider).isAvailable();
+      if (!available) {
+        if (context.mounted) _toast(context, context.l10n.settingsBiometricUnavailable);
+        return;
+      }
+    }
+    await ref.read(prefsProvider.notifier).setBiometricUnlock(enabled);
+  }
+
+  Future<void> _clearCache(BuildContext context, WidgetRef ref) async {
+    await ref.read(chatCacheProvider).clear();
+    if (context.mounted) _toast(context, context.l10n.settingsCacheCleared);
   }
 
   // ── Account actions ──────────────────────────────────────────────────
 
   Future<void> _editDisplayName(BuildContext context, WidgetRef ref, String? current) async {
+    final l10n = context.l10n;
     final name = await showDialog<String>(
       context: context,
       builder: (_) => _TextPromptDialog(
-        title: 'Display name',
-        hint: 'Your name',
+        title: l10n.settingsDisplayName,
+        hint: l10n.settingsYourName,
         initial: current ?? '',
-        confirmLabel: 'Save',
+        confirmLabel: l10n.commonSave,
       ),
     );
     if (name == null || !context.mounted) return;
@@ -87,13 +114,14 @@ class SettingsScreen extends ConsumerWidget {
       final repo = await ref.read(authRepositoryProvider.future);
       await repo.updateProfile(fullName: name.trim());
       ref.invalidate(currentUserProvider);
-      if (context.mounted) _toast(context, 'Display name updated');
+      if (context.mounted) _toast(context, l10n.settingsDisplayNameUpdated);
     } catch (e) {
-      if (context.mounted) _toast(context, errorText(e));
+      if (context.mounted) _toast(context, context.describeError(e));
     }
   }
 
   Future<void> _changePassword(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n;
     final result = await showDialog<({String current, String next})>(
       context: context,
       builder: (_) => const _ChangePasswordDialog(),
@@ -102,11 +130,9 @@ class SettingsScreen extends ConsumerWidget {
     try {
       final repo = await ref.read(authRepositoryProvider.future);
       await repo.changePassword(currentPassword: result.current, newPassword: result.next);
-      if (context.mounted) {
-        _toast(context, 'Password changed. Other devices have been signed out.');
-      }
+      if (context.mounted) _toast(context, l10n.settingsPasswordChanged);
     } catch (e) {
-      if (context.mounted) _toast(context, errorText(e));
+      if (context.mounted) _toast(context, context.describeError(e));
     }
   }
 
@@ -119,12 +145,13 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _logoutEverywhere(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => const _ConfirmDialog(
-        title: 'Sign out everywhere?',
-        message: 'Every device signed in to this account will have to sign in again.',
-        confirmLabel: 'Sign out everywhere',
+      builder: (ctx) => _ConfirmDialog(
+        title: l10n.settingsSignOutEverywhereTitle,
+        message: l10n.settingsSignOutEverywhereBody,
+        confirmLabel: l10n.settingsSignOutEverywhere,
       ),
     );
     if (ok != true || !context.mounted) return;
@@ -135,17 +162,18 @@ class SettingsScreen extends ConsumerWidget {
       if (!context.mounted) return;
       context.go(AppRoutes.login);
     } catch (e) {
-      if (context.mounted) _toast(context, errorText(e));
+      if (context.mounted) _toast(context, context.describeError(e));
     }
   }
 
   Future<void> _clearAllChats(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => const _ConfirmDialog(
-        title: 'Delete all chats?',
-        message: 'This deletes every chat session for your account. Documents are preserved.',
-        confirmLabel: 'Delete all',
+      builder: (ctx) => _ConfirmDialog(
+        title: l10n.settingsDeleteAllChatsTitle,
+        message: l10n.settingsDeleteAllChatsBody,
+        confirmLabel: l10n.settingsDeleteAll,
       ),
     );
     if (ok != true || !context.mounted) return;
@@ -156,22 +184,22 @@ class SettingsScreen extends ConsumerWidget {
         await repo.deleteSession(s.id);
       }
       ref.invalidate(sessionListProvider);
-      if (context.mounted) _toast(context, 'Deleted ${sessions.length} chats');
+      if (context.mounted) _toast(context, l10n.settingsDeletedChats(sessions.length));
     } catch (e) {
-      if (context.mounted) _toast(context, errorText(e));
+      if (context.mounted) _toast(context, context.describeError(e));
     }
   }
 
   Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n;
     final password = await showDialog<String>(
       context: context,
-      builder: (_) => const _TextPromptDialog(
-        title: 'Delete account?',
-        message: 'Your account, chats and documents will be removed. '
-            'This can’t be undone. Enter your password to confirm.',
-        hint: 'Password',
+      builder: (_) => _TextPromptDialog(
+        title: l10n.settingsDeleteAccountTitle,
+        message: l10n.settingsDeleteAccountBody,
+        hint: l10n.authPasswordHint,
         obscure: true,
-        confirmLabel: 'Delete account',
+        confirmLabel: l10n.settingsDeleteAccount,
         danger: true,
       ),
     );
@@ -183,12 +211,21 @@ class SettingsScreen extends ConsumerWidget {
       if (!context.mounted) return;
       context.go(AppRoutes.login);
     } catch (e) {
-      if (context.mounted) _toast(context, errorText(e));
+      if (context.mounted) _toast(context, context.describeError(e));
     }
+  }
+
+  void _showLicenses(BuildContext context, AppInfo info) {
+    showLicensePage(
+      context: context,
+      applicationName: info.appName,
+      applicationVersion: info.versionLabel,
+    );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final user = ref.watch(currentUserProvider);
     final prefs = ref.watch(prefsProvider);
@@ -201,15 +238,17 @@ class SettingsScreen extends ConsumerWidget {
     final memoryEnabled = user.value?.memoryEnabled ?? true;
     final isServerAdmin = user.value?.isServerAdmin ?? false;
     final voice = ref.watch(voiceCapabilitiesProvider).valueOrNull;
+    final appInfo = ref.watch(appInfoProvider).valueOrNull ?? AppInfo.fallback;
     // A voice that is no longer offered falls back to the server default.
     final voiceIds = {for (final v in voice?.voices ?? const []) v.id};
     final selectedVoice = voiceIds.contains(prefs.voice) ? prefs.voice! : '';
+    final language = AppLanguage.fromCode(prefs.languageCode);
 
     return Scaffold(
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Settings', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.settingsTitle, style: TextStyle(color: t.textPrimary)),
       ),
       body: RefreshIndicator(
         color: NexusColors.crimson,
@@ -256,7 +295,9 @@ class SettingsScreen extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              displayName?.isNotEmpty == true ? displayName! : 'Signed in',
+                              displayName?.isNotEmpty == true
+                                  ? displayName!
+                                  : l10n.settingsSignedIn,
                               style: TextStyle(
                                 color: t.textPrimary,
                                 fontSize: 16,
@@ -277,39 +318,39 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'WORKSPACE',
+                  label: l10n.sectionWorkspace,
                   children: [
                     _InfoRow(
                       icon:
                           org?.isPersonal == false ? Icons.business_rounded : Icons.person_rounded,
-                      label: 'Active workspace',
+                      label: l10n.settingsActiveWorkspace,
                       value: org == null
                           ? '—'
                           : org.isPersonal
-                              ? 'Personal'
-                              : '${org.name} · ${org.role.label}',
+                              ? l10n.orgPersonal
+                              : l10n.settingsOrgRole(org.name, org.role.localized(l10n)),
                     ),
                     if (org != null && org.canManage) ...[
                       const _Divider(),
                       _ActionTile(
                         icon: Icons.manage_accounts_rounded,
-                        title: 'Manage workspace',
-                        subtitle: 'Name, budgets, allowed models, members.',
+                        title: l10n.settingsManageWorkspace,
+                        subtitle: l10n.settingsManageWorkspaceSubtitle,
                         onTap: () => context.go(AppRoutes.orgSettings(org.id)),
                       ),
                       const _Divider(),
                       _ActionTile(
                         icon: Icons.bar_chart_rounded,
-                        title: 'Usage report',
-                        subtitle: 'Tokens, cost and messages by member, model or day.',
+                        title: l10n.orgUsageReport,
+                        subtitle: l10n.settingsUsageReportSubtitle,
                         onTap: () => context.go(AppRoutes.orgUsage(org.id)),
                       ),
                     ],
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.smart_toy_outlined,
-                      title: 'Assistants',
-                      subtitle: 'Personas to start chats with.',
+                      title: l10n.sidebarAssistants,
+                      subtitle: l10n.settingsAssistantsSubtitle,
                       onTap: () => context.go(AppRoutes.assistants),
                     ),
                   ],
@@ -317,19 +358,19 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'USAGE',
+                  label: l10n.sectionUsage,
                   children: [
                     usage.when(
-                      loading: () => const _ModelsPlaceholder(
+                      loading: () => _ModelsPlaceholder(
                         icon: Icons.hourglass_empty_rounded,
-                        text: 'Loading usage…',
+                        text: l10n.settingsLoadingUsage,
                       ),
                       error: (e, _) => _ModelsPlaceholder(
                         icon: Icons.cloud_off_rounded,
-                        text: 'Could not load usage: ${errorText(e)}',
+                        text: l10n.settingsUsageFailed(context.describeError(e)),
                         action: TextButton(
                           onPressed: () => ref.invalidate(usageMeProvider),
-                          child: const Text('Retry'),
+                          child: Text(l10n.commonRetry),
                         ),
                       ),
                       data: (summary) => UsageSummaryView(summary: summary),
@@ -339,63 +380,75 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'APPEARANCE',
+                  label: l10n.sectionAppearance,
                   children: [
                     _ThemeRow(value: prefs.themeMode, onChanged: prefsCtrl.setThemeMode),
+                    const _Divider(),
+                    _ChoiceTile<AppLanguage>(
+                      icon: Icons.translate_rounded,
+                      title: l10n.settingsLanguage,
+                      value: language,
+                      onChanged: (v) => prefsCtrl.setLanguage(v.code),
+                      options: [
+                        (l10n.settingsLanguageSystem, AppLanguage.system),
+                        for (final lang in AppLanguage.values)
+                          if (lang != AppLanguage.system) (lang.nativeName, lang),
+                      ],
+                    ),
                   ],
                 ),
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'CHAT',
+                  label: l10n.sectionChat,
                   children: [
                     _SwitchTile(
                       icon: Icons.stream_rounded,
-                      title: 'Stream responses',
-                      subtitle: 'Token-by-token delivery. Off = wait for full reply.',
+                      title: l10n.settingsStream,
+                      subtitle: l10n.settingsStreamSubtitle,
                       value: prefs.streamingEnabled,
                       onChanged: prefsCtrl.setStreaming,
                     ),
                     const _Divider(),
                     _SwitchTile(
                       icon: Icons.menu_book_rounded,
-                      title: 'Use RAG by default',
-                      subtitle: 'Ground replies in your uploaded documents.',
+                      title: l10n.settingsRag,
+                      subtitle: l10n.settingsRagSubtitle,
                       value: prefs.ragByDefault,
                       onChanged: prefsCtrl.setRag,
                     ),
                     const _Divider(),
                     _SwitchTile(
                       icon: Icons.build_rounded,
-                      title: 'Use tools by default',
-                      subtitle: 'Let the agent call tools (calculator, search, …) in new chats.',
+                      title: l10n.settingsTools,
+                      subtitle: l10n.settingsToolsSubtitle,
                       value: prefs.toolsByDefault,
                       onChanged: prefsCtrl.setTools,
                     ),
                     const _Divider(),
                     _SwitchTile(
                       icon: Icons.psychology_outlined,
-                      title: 'Memory',
-                      subtitle: 'Remember facts and preferences from chats and use them later.',
+                      title: l10n.settingsMemory,
+                      subtitle: l10n.settingsMemorySubtitle,
                       value: memoryEnabled,
                       onChanged: (v) => _setMemoryEnabled(context, ref, v),
                     ),
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.list_alt_rounded,
-                      title: 'What NexusBot remembers',
-                      subtitle: 'Review, edit or forget memories.',
+                      title: l10n.settingsWhatRemembers,
+                      subtitle: l10n.settingsWhatRemembersSubtitle,
                       onTap: () => context.go(AppRoutes.memory),
                     ),
                     const _Divider(),
                     _ChoiceTile<StreamTransport>(
                       icon: Icons.swap_horiz_rounded,
-                      title: 'Stream transport',
+                      title: l10n.settingsTransport,
                       value: prefs.transport,
                       onChanged: prefsCtrl.setTransport,
-                      options: const [
-                        ('Server-Sent Events', StreamTransport.sse),
-                        ('WebSocket', StreamTransport.websocket),
+                      options: [
+                        (l10n.settingsTransportSse, StreamTransport.sse),
+                        (l10n.settingsTransportWs, StreamTransport.websocket),
                       ],
                     ),
                   ],
@@ -404,13 +457,12 @@ class SettingsScreen extends ConsumerWidget {
                 if (voice != null && voice.ttsAvailable) ...[
                   const SizedBox(height: NexusSpacing.xl),
                   _Section(
-                    label: 'VOICE',
+                    label: l10n.sectionVoice,
                     children: [
                       _SwitchTile(
                         icon: Icons.volume_up_rounded,
-                        title: 'Speak replies',
-                        subtitle: 'Read every reply aloud as it arrives '
-                            '(text-to-speech by ${voice.provider}).',
+                        title: l10n.settingsSpeakReplies,
+                        subtitle: l10n.settingsSpeakRepliesSubtitle(voice.provider),
                         value: prefs.speakReplies,
                         onChanged: prefsCtrl.setSpeakReplies,
                       ),
@@ -418,21 +470,21 @@ class SettingsScreen extends ConsumerWidget {
                         const _Divider(),
                         _ChoiceTile<String>(
                           icon: Icons.record_voice_over_rounded,
-                          title: 'Voice',
+                          title: l10n.settingsVoice,
                           value: selectedVoice,
                           onChanged: (v) => prefsCtrl.setVoice(v.isEmpty ? null : v),
                           options: [
-                            ('Server default', ''),
+                            (l10n.voiceServerDefault, ''),
                             for (final v in voice.voices) (v.name, v.id),
                           ],
                         ),
                       ],
                       if (voice.sttAvailable) ...[
                         const _Divider(),
-                        const _InfoRow(
+                        _InfoRow(
                           icon: Icons.mic_rounded,
-                          label: 'Voice input',
-                          value: 'Hold the microphone in a chat',
+                          label: l10n.settingsVoiceInput,
+                          value: l10n.settingsVoiceInputValue,
                         ),
                       ],
                     ],
@@ -441,26 +493,26 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'MODEL',
+                  label: l10n.sectionModel,
                   children: [
                     catalog.when(
-                      loading: () => const _ModelsPlaceholder(
+                      loading: () => _ModelsPlaceholder(
                         icon: Icons.hourglass_empty_rounded,
-                        text: 'Loading models from the server…',
+                        text: l10n.settingsLoadingModels,
                       ),
                       error: (e, _) => _ModelsPlaceholder(
                         icon: Icons.cloud_off_rounded,
-                        text: 'Could not load models: ${errorText(e)}',
+                        text: l10n.settingsModelsFailed(context.describeError(e)),
                         action: TextButton(
                           onPressed: () => _refreshModels(ref),
-                          child: const Text('Retry'),
+                          child: Text(l10n.commonRetry),
                         ),
                       ),
                       data: (c) {
                         if (c.isEmpty) {
-                          return const _ModelsPlaceholder(
+                          return _ModelsPlaceholder(
                             icon: Icons.memory_rounded,
-                            text: 'No model providers are configured on this server.',
+                            text: l10n.settingsNoProviders,
                           );
                         }
                         return Column(
@@ -481,9 +533,7 @@ class SettingsScreen extends ConsumerWidget {
                                 NexusSpacing.md,
                               ),
                               child: Text(
-                                'Used for new chats. Each chat can switch models from its '
-                                'header, and the composer can override it per message. '
-                                'Pull to refresh the list.',
+                                l10n.settingsModelNote,
                                 style: TextStyle(color: t.textMuted, fontSize: 11.5),
                               ),
                             ),
@@ -497,19 +547,19 @@ class SettingsScreen extends ConsumerWidget {
                 if (isServerAdmin) ...[
                   const SizedBox(height: NexusSpacing.xl),
                   _Section(
-                    label: 'ADMINISTRATION',
+                    label: l10n.sectionAdministration,
                     children: [
                       _ActionTile(
                         icon: Icons.insights_rounded,
-                        title: 'Server usage',
-                        subtitle: 'Every workspace, by organization, user, model or day.',
+                        title: l10n.settingsServerUsage,
+                        subtitle: l10n.settingsServerUsageSubtitle,
                         onTap: () => context.go(AppRoutes.adminUsage),
                       ),
                       const _Divider(),
                       _ActionTile(
                         icon: Icons.thumbs_up_down_outlined,
-                        title: 'Feedback',
-                        subtitle: 'Thumbs up / down left on replies.',
+                        title: l10n.settingsFeedback,
+                        subtitle: l10n.settingsFeedbackSubtitle,
                         onTap: () => context.go(AppRoutes.adminFeedback),
                       ),
                     ],
@@ -517,12 +567,39 @@ class SettingsScreen extends ConsumerWidget {
                 ],
 
                 const SizedBox(height: NexusSpacing.xl),
-                const _Section(
-                  label: 'CONNECTION',
+                _Section(
+                  label: l10n.sectionSecurity,
+                  children: [
+                    _SwitchTile(
+                      icon: Icons.fingerprint_rounded,
+                      title: l10n.settingsBiometric,
+                      subtitle: l10n.settingsBiometricSubtitle,
+                      value: prefs.biometricUnlock,
+                      onChanged: (v) => _setBiometric(context, ref, v),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: l10n.sectionOffline,
+                  children: [
+                    _ActionTile(
+                      icon: Icons.cloud_off_rounded,
+                      title: l10n.settingsClearCache,
+                      subtitle: l10n.settingsClearCacheSubtitle,
+                      onTap: () => _clearCache(context, ref),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: l10n.sectionConnection,
                   children: [
                     _InfoRow(
                       icon: Icons.cloud_outlined,
-                      label: 'API base URL',
+                      label: l10n.settingsApiBaseUrl,
                       value: Env.apiBaseUrl,
                     ),
                   ],
@@ -530,33 +607,34 @@ class SettingsScreen extends ConsumerWidget {
 
                 const SizedBox(height: NexusSpacing.xl),
                 _Section(
-                  label: 'ACCOUNT',
+                  label: l10n.sectionAccount,
                   children: [
                     _ActionTile(
                       icon: Icons.person_outline_rounded,
-                      title: 'Display name',
-                      subtitle: displayName?.isNotEmpty == true ? displayName! : 'Not set',
+                      title: l10n.settingsDisplayName,
+                      subtitle:
+                          displayName?.isNotEmpty == true ? displayName! : l10n.settingsNotSet,
                       onTap: () => _editDisplayName(context, ref, displayName),
                     ),
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.password_rounded,
-                      title: 'Change password',
-                      subtitle: 'Signs out every other device.',
+                      title: l10n.settingsChangePassword,
+                      subtitle: l10n.settingsChangePasswordSubtitle,
                       onTap: () => _changePassword(context, ref),
                     ),
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.delete_sweep_rounded,
-                      title: 'Clear all chats',
-                      subtitle: 'Remove every chat session.',
+                      title: l10n.settingsClearAllChats,
+                      subtitle: l10n.settingsClearAllChatsSubtitle,
                       onTap: () => _clearAllChats(context, ref),
                       danger: true,
                     ),
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.logout_rounded,
-                      title: 'Sign out',
+                      title: l10n.settingsSignOut,
                       subtitle: user.value?.email ?? '',
                       onTap: () => _logout(context, ref),
                       danger: true,
@@ -564,18 +642,44 @@ class SettingsScreen extends ConsumerWidget {
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.devices_other_rounded,
-                      title: 'Sign out everywhere',
-                      subtitle: 'Revoke every signed-in device.',
+                      title: l10n.settingsSignOutEverywhere,
+                      subtitle: l10n.settingsSignOutEverywhereSubtitle,
                       onTap: () => _logoutEverywhere(context, ref),
                       danger: true,
                     ),
                     const _Divider(),
                     _ActionTile(
                       icon: Icons.delete_forever_rounded,
-                      title: 'Delete account',
-                      subtitle: 'Permanently remove your account and data.',
+                      title: l10n.settingsDeleteAccount,
+                      subtitle: l10n.settingsDeleteAccountSubtitle,
                       onTap: () => _deleteAccount(context, ref),
                       danger: true,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: NexusSpacing.xl),
+                _Section(
+                  label: l10n.sectionAbout,
+                  children: [
+                    _InfoRow(
+                      icon: Icons.info_outline_rounded,
+                      label: l10n.settingsVersion,
+                      value: appInfo.versionLabel,
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.policy_outlined,
+                      title: l10n.settingsLegal,
+                      subtitle: l10n.settingsLegalSubtitle,
+                      onTap: () => context.push(AppRoutes.legal),
+                    ),
+                    const _Divider(),
+                    _ActionTile(
+                      icon: Icons.code_rounded,
+                      title: l10n.settingsLicenses,
+                      subtitle: l10n.settingsLicensesSubtitle,
+                      onTap: () => _showLicenses(context, appInfo),
                     ),
                   ],
                 ),
@@ -583,7 +687,7 @@ class SettingsScreen extends ConsumerWidget {
                 const SizedBox(height: NexusSpacing.xxxl),
                 Center(
                   child: Text(
-                    'NexusBot v1.0.0 · FastAPI · LangChain · Flutter',
+                    l10n.settingsFooter(appInfo.version),
                     style: TextStyle(color: t.textMuted, fontSize: 11),
                   ),
                 ),
@@ -618,7 +722,10 @@ class _ConfirmDialog extends StatelessWidget {
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(context.l10n.commonCancel),
+        ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
@@ -688,7 +795,10 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(context.l10n.commonCancel),
+        ),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(
@@ -729,8 +839,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
-      title: const Text('Change password'),
+      title: Text(l10n.settingsChangePassword),
       content: Form(
         key: _formKey,
         child: Column(
@@ -741,36 +852,35 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               autofocus: true,
               obscureText: true,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(hintText: 'Current password'),
-              validator: (v) => (v ?? '').isEmpty ? 'Enter your current password' : null,
+              decoration: InputDecoration(hintText: l10n.settingsCurrentPassword),
+              validator: (v) => (v ?? '').isEmpty ? l10n.settingsCurrentPasswordRequired : null,
             ),
             const SizedBox(height: NexusSpacing.md),
             TextFormField(
               controller: _next,
               obscureText: true,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(hintText: 'New password (min 8 chars)'),
-              validator: (v) =>
-                  (v ?? '').length < 8 ? 'Password must be at least 8 characters' : null,
+              decoration: InputDecoration(hintText: l10n.settingsNewPasswordHint),
+              validator: (v) => (v ?? '').length < 8 ? l10n.authPasswordTooShort : null,
             ),
             const SizedBox(height: NexusSpacing.md),
             TextFormField(
               controller: _confirm,
               obscureText: true,
               textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(hintText: 'Repeat new password'),
+              decoration: InputDecoration(hintText: l10n.settingsRepeatPassword),
               onFieldSubmitted: (_) => _submit(),
-              validator: (v) => v != _next.text ? 'Passwords don’t match' : null,
+              validator: (v) => v != _next.text ? l10n.settingsPasswordsMismatch : null,
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Change password'),
+          child: Text(l10n.settingsChangePassword),
         ),
       ],
     );
@@ -793,7 +903,7 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: NexusSpacing.sm),
+          padding: const EdgeInsetsDirectional.only(start: 4, bottom: NexusSpacing.sm),
           child: Text(
             label,
             style: TextStyle(
@@ -907,12 +1017,13 @@ class _ModelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final hints = <String>[
       if (model.contextLabel != null) model.contextLabel!,
       if (model.priceLabel != null) model.priceLabel!,
-      if (!model.supportsTools) 'no tools',
-      if (model.supportsVision) 'vision',
+      if (!model.supportsTools) l10n.modelNoTools,
+      if (model.supportsVision) l10n.modelVision,
       ...model.tags,
     ];
     return Material(
@@ -1128,11 +1239,12 @@ class _ThemeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
-    const options = [
-      (Icons.brightness_auto_rounded, 'System', ThemeMode.system),
-      (Icons.light_mode_rounded, 'Light', ThemeMode.light),
-      (Icons.dark_mode_rounded, 'Dark', ThemeMode.dark),
+    final options = [
+      (Icons.brightness_auto_rounded, l10n.themeSystem, ThemeMode.system),
+      (Icons.light_mode_rounded, l10n.themeLight, ThemeMode.light),
+      (Icons.dark_mode_rounded, l10n.themeDark, ThemeMode.dark),
     ];
     return Padding(
       padding: const EdgeInsets.all(NexusSpacing.md),

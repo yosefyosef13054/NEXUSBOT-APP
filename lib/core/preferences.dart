@@ -24,6 +24,8 @@ class AppPrefs {
     this.voice,
     this.activeOrgId,
     this.activeOrgUserId,
+    this.languageCode,
+    this.biometricUnlock = false,
   });
 
   final ThemeMode themeMode;
@@ -50,6 +52,13 @@ class AppPrefs {
   /// The active organization chosen by [userId], or null (personal).
   String? activeOrgIdFor(String userId) => activeOrgUserId == userId ? activeOrgId : null;
 
+  /// UI language (`en`, `he`, `ar`); null follows the device locale.
+  final String? languageCode;
+
+  /// Ask for the device unlock (biometrics / passcode) before showing the
+  /// signed-in app. Off by default.
+  final bool biometricUnlock;
+
   AppPrefs copyWith({
     ThemeMode? themeMode,
     StreamTransport? transport,
@@ -63,6 +72,9 @@ class AppPrefs {
     String? activeOrgId,
     String? activeOrgUserId,
     bool clearActiveOrg = false,
+    String? languageCode,
+    bool clearLanguage = false,
+    bool? biometricUnlock,
   }) =>
       AppPrefs(
         themeMode: themeMode ?? this.themeMode,
@@ -75,6 +87,8 @@ class AppPrefs {
         voice: clearVoice ? null : (voice ?? this.voice),
         activeOrgId: clearActiveOrg ? null : (activeOrgId ?? this.activeOrgId),
         activeOrgUserId: clearActiveOrg ? null : (activeOrgUserId ?? this.activeOrgUserId),
+        languageCode: clearLanguage ? null : (languageCode ?? this.languageCode),
+        biometricUnlock: biometricUnlock ?? this.biometricUnlock,
       );
 
   static const defaults = AppPrefs(
@@ -98,6 +112,8 @@ class _PrefKeys {
   static const voice = 'pref.voice';
   static const activeOrg = 'pref.activeOrgId';
   static const activeOrgUser = 'pref.activeOrgUserId';
+  static const language = 'pref.language';
+  static const biometricUnlock = 'pref.biometricUnlock';
 }
 
 class PrefsController extends StateNotifier<AppPrefs> {
@@ -118,6 +134,8 @@ class PrefsController extends StateNotifier<AppPrefs> {
         voice: p.getString(_PrefKeys.voice),
         activeOrgId: p.getString(_PrefKeys.activeOrg),
         activeOrgUserId: p.getString(_PrefKeys.activeOrgUser),
+        languageCode: p.getString(_PrefKeys.language),
+        biometricUnlock: p.getBool(_PrefKeys.biometricUnlock) ?? false,
       );
 
   Future<void> setThemeMode(ThemeMode m) async {
@@ -163,6 +181,21 @@ class PrefsController extends StateNotifier<AppPrefs> {
     } else {
       await _prefs.setString(_PrefKeys.voice, voice);
     }
+  }
+
+  /// UI language; null follows the device.
+  Future<void> setLanguage(String? code) async {
+    state = state.copyWith(languageCode: code, clearLanguage: code == null);
+    if (code == null) {
+      await _prefs.remove(_PrefKeys.language);
+    } else {
+      await _prefs.setString(_PrefKeys.language, code);
+    }
+  }
+
+  Future<void> setBiometricUnlock(bool v) async {
+    state = state.copyWith(biometricUnlock: v);
+    await _prefs.setBool(_PrefKeys.biometricUnlock, v);
   }
 
   /// Remembers the organization [userId] works in; null = their personal

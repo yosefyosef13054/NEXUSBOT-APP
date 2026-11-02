@@ -1,0 +1,5 @@
+# Bundle identifier and Apple team of the iOS target. The App Store Connect
+# API key (APP_STORE_CONNECT_*) is read by the Fastfile; no Apple ID password
+# is needed.
+app_identifier(ENV["IOS_BUNDLE_ID"] || "com.example.nexusbot")
+team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 
+import '../../core/api_exception.dart';
 import '../attachments/attachment_model.dart';
 
 export '../attachments/attachment_model.dart' show Attachment, AttachmentKind;
@@ -100,6 +101,22 @@ class ChatSession {
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
+
+  /// The server shape (`SessionRead`), so a cached session round-trips
+  /// through [ChatSession.fromJson].
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'system_prompt': systemPrompt,
+        'summary': summary,
+        'model': model,
+        'meta': meta,
+        'org_id': orgId,
+        'assistant_id': assistantId,
+        'active_leaf_id': activeLeafId,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt.toIso8601String(),
+      };
 }
 
 /// Where a message sits among its siblings — the edits of a user message or
@@ -118,6 +135,8 @@ class SiblingInfo {
 
   int get displayIndex => (index + 1).clamp(1, count < 1 ? 1 : count);
   bool get hasSiblings => count > 1;
+
+  Map<String, dynamic> toJson() => {'index': index, 'count': count};
 }
 
 /// The user's thumbs up / down on a reply (`meta.feedback`).
@@ -135,6 +154,8 @@ class MessageFeedback {
 
   bool get isUp => rating > 0;
   bool get isDown => rating < 0;
+
+  Map<String, dynamic> toJson() => {'rating': rating, if (comment != null) 'comment': comment};
 }
 
 /// `GET /sessions/{id}/messages/{message_id}/siblings`.
@@ -250,6 +271,21 @@ class Citation {
 
   /// Whether the chunk viewer can fetch the full text.
   bool get canOpen => documentId.isNotEmpty && chunkId != null && chunkId!.isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'document_id': documentId,
+        'document_name': documentName,
+        'chunk_id': chunkId,
+        'chunk_index': chunkIndex,
+        'page': page,
+        'section': section,
+        'start_index': startIndex,
+        'end_index': endIndex,
+        'collection_id': collectionId,
+        'match': match,
+        'score': score,
+        'excerpt': excerpt,
+      };
 }
 
 enum ToolCallStatus {
@@ -300,6 +336,16 @@ class ToolCall {
   final ToolCallStatus status;
   final int? latencyMs;
   final String? error;
+
+  Map<String, dynamic> toJson() => {
+        'tool': tool,
+        'call_id': callId,
+        'input': input,
+        'output': output,
+        'status': status.name,
+        'latency_ms': latencyMs,
+        'error': error,
+      };
 }
 
 /// Upserts [incoming] into [existing]: an entry with a known `call_id`
@@ -348,6 +394,9 @@ class ApprovalToolCall {
   final String tool;
   final Object? input;
   final String description;
+
+  Map<String, dynamic> toJson() =>
+      {'call_id': callId, 'tool': tool, 'input': input, 'description': description};
 }
 
 /// A human-in-the-loop request: the agent paused before running one or more
@@ -398,6 +447,15 @@ class ApprovalRequest {
         toolCalls: toolCalls,
         status: status ?? this.status,
       );
+
+  Map<String, dynamic> toJson() => {
+        'approval_id': approvalId,
+        'session_id': sessionId,
+        'message_id': messageId,
+        'expires_at': expiresAt?.toIso8601String(),
+        'tool_calls': [for (final c in toolCalls) c.toJson()],
+        'status': status,
+      };
 }
 
 List<Citation> _citationsFrom(Object? raw) => (raw as List? ?? const [])
@@ -461,6 +519,9 @@ class MessageAudio {
   final int chunks;
 
   bool get isPlayable => url.isNotEmpty;
+
+  Map<String, dynamic> toJson() =>
+      {'attachment_id': attachmentId, 'url': url, 'format': format, 'chunks': chunks};
 }
 
 /// `meta.status` of a persisted assistant message.
@@ -469,6 +530,102 @@ abstract final class MessageStatus {
   static const interrupted = 'interrupted';
   static const error = 'error';
   static const awaitingApproval = 'awaiting_approval';
+}
+
+/// Delivery state of a user message sent from this device.
+enum MessageDelivery {
+  /// Accepted by the server (or loaded from it).
+  sent,
+
+  /// Waiting in the send queue (offline, or the send hit a transport error);
+  /// retried automatically on reconnect.
+  queued,
+
+  /// The queue gave up (a non-transient refusal): needs a manual retry or a
+  /// cancel.
+  failed,
+}
+
+/// Why a turn could not run — what the chat screen shows above the composer.
+///
+/// Kept as a kind + raw server text so the screen can translate the kinds
+/// it knows ([ChatErrorKind.busy], …) and show the server's own message for
+/// the rest; [text] is the untranslated fallback.
+enum ChatErrorKind {
+  /// Text from the server (an `error` stream frame).
+  message,
+
+  /// An exception thrown by a repository call (see [ChatError.error]).
+  exception,
+  busy,
+  staleApproval,
+  voiceUnavailable,
+  visionRequired,
+}
+
+class ChatError {
+  const ChatError(this.kind, {this.message = '', this.models = const [], this.error});
+
+  const ChatError.message(String message) : this(ChatErrorKind.message, message: message);
+
+  /// Classifies a thrown error: a vision refusal (422 with
+  /// `details.vision_models`), a missing voice provider
+  /// (`details.code == voice_unavailable`) or any other failure.
+  factory ChatError.exception(Object error) {
+    if (error is ApiException) {
+      final visionModels = error.details?['vision_models'];
+      if (visionModels is List && visionModels.isNotEmpty) {
+        return ChatError(
+          ChatErrorKind.visionRequired,
+          message: error.userMessage,
+          models: [for (final m in visionModels) m.toString()],
+          error: error,
+        );
+      }
+      if (error.details?['code'] == 'voice_unavailable') return ChatError.voiceUnavailable;
+    }
+    return ChatError(ChatErrorKind.exception, message: errorText(error), error: error);
+  }
+
+  static const busy = ChatError(ChatErrorKind.busy);
+  static const staleApproval = ChatError(ChatErrorKind.staleApproval);
+  static const voiceUnavailable = ChatError(ChatErrorKind.voiceUnavailable);
+
+  final ChatErrorKind kind;
+
+  /// The server's message (or the client's transport message).
+  final String message;
+
+  /// Ids of the models that can read images ([ChatErrorKind.visionRequired]).
+  final List<String> models;
+
+  /// The thrown object ([ChatErrorKind.exception]), for localised rendering.
+  final Object? error;
+
+  /// Untranslated text (what the screen shows when no translation applies,
+  /// and what tests assert on).
+  String get text => switch (kind) {
+        ChatErrorKind.message || ChatErrorKind.exception => message,
+        ChatErrorKind.busy =>
+          'The assistant is still answering a previous message — wait for it to finish.',
+        ChatErrorKind.staleApproval =>
+          'That approval was already resolved or has expired — the chat was refreshed.',
+        ChatErrorKind.voiceUnavailable => 'Voice is not available on this server.',
+        ChatErrorKind.visionRequired => '$message Models with vision: ${models.join(', ')}.',
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatError &&
+      other.kind == kind &&
+      other.message == message &&
+      const ListEquality<String>().equals(other.models, models);
+
+  @override
+  int get hashCode => Object.hash(kind, message, Object.hashAll(models));
+
+  @override
+  String toString() => 'ChatError($kind: $text)';
 }
 
 class ChatMessage {
@@ -494,6 +651,8 @@ class ChatMessage {
     this.attachments = const [],
     this.artifacts = const [],
     this.audio,
+    this.delivery = MessageDelivery.sent,
+    this.deliveryError,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) {
@@ -600,8 +759,24 @@ class ChatMessage {
   /// The spoken version of the reply, when one was synthesized.
   final MessageAudio? audio;
 
+  /// Whether the server has this message (user messages sent from here).
+  final MessageDelivery delivery;
+
+  /// Why the send queue gave up ([MessageDelivery.failed]).
+  final String? deliveryError;
+
   /// A `role: "tool"` history row — rendered as a chip, never as a bubble.
   bool get isToolRun => role == MessageRole.tool;
+
+  /// Waiting in the send queue, or parked there after a refusal.
+  bool get isQueued => delivery != MessageDelivery.sent;
+
+  /// The optimistic bubble of a voice turn while the clip is transcribed.
+  bool get isVoicePlaceholder => isPendingUser && content == voicePlaceholderText;
+
+  /// Text of the optimistic bubble while a voice clip is transcribed (a
+  /// sentinel: the bubble renders a translated label instead).
+  static const voicePlaceholderText = '\u0000voice-placeholder';
 
   bool get awaitingApproval => status == MessageStatus.awaitingApproval;
 
@@ -632,6 +807,9 @@ class ChatMessage {
     List<Attachment>? artifacts,
     MessageAudio? audio,
     bool clearAudio = false,
+    MessageDelivery? delivery,
+    String? deliveryError,
+    bool clearDeliveryError = false,
   }) =>
       ChatMessage(
         id: id ?? this.id,
@@ -655,7 +833,50 @@ class ChatMessage {
         attachments: attachments ?? this.attachments,
         artifacts: artifacts ?? this.artifacts,
         audio: clearAudio ? null : (audio ?? this.audio),
+        delivery: delivery ?? this.delivery,
+        deliveryError: clearDeliveryError ? null : (deliveryError ?? this.deliveryError),
       );
+
+  /// The server shape (`MessageRead`), so a cached message round-trips
+  /// through [ChatMessage.fromJson]. Local-only state (streaming, delivery)
+  /// is not written: only persisted messages are cached.
+  Map<String, dynamic> toJson() {
+    final toolRun = role == MessageRole.tool ? toolCalls.firstOrNull : null;
+    return {
+      'id': id,
+      'session_id': sessionId,
+      'role': role.name,
+      'content': content,
+      'tokens': tokens,
+      'created_at': createdAt.toIso8601String(),
+      if (parentId != null) 'parent_id': parentId,
+      if (siblings != null) 'siblings': siblings!.toJson(),
+      'meta': {
+        if (status != null)
+          'status': status
+        else if (interrupted)
+          'status': MessageStatus.interrupted,
+        if (model != null) 'model': model,
+        if (generationId != null) 'generation_id': generationId,
+        if (citations.isNotEmpty) 'citations': [for (final c in citations) c.toJson()],
+        if (toolRun != null) ...{
+          'tool': toolRun.tool,
+          'call_id': toolRun.callId,
+          'input': toolRun.input,
+          if (status == null) 'status': toolRun.status.name,
+          'latency_ms': toolRun.latencyMs,
+          'error': toolRun.error,
+        } else if (toolCalls.isNotEmpty)
+          'tool_calls': [for (final tc in toolCalls) tc.toJson()],
+        if (approval != null) 'approval': approval!.toJson(),
+        if (feedback != null) 'feedback': feedback!.toJson(),
+        if (memoriesUsed.isNotEmpty) 'memories_used': memoriesUsed,
+        if (attachments.isNotEmpty) 'attachments': [for (final a in attachments) a.toJson()],
+        if (artifacts.isNotEmpty) 'artifacts': [for (final a in artifacts) a.toJson()],
+        if (audio != null) 'audio': audio!.toJson(),
+      },
+    };
+  }
 }
 
 /// One hit of `POST /search`. [highlight] wraps matched terms in

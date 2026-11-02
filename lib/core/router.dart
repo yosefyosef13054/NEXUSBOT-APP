@@ -12,10 +12,12 @@ import '../features/auth/splash_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/collections/collections_screen.dart';
 import '../features/documents/documents_screen.dart';
+import '../features/legal/legal_screen.dart';
 import '../features/mcp/mcp_screen.dart';
 import '../features/memory/memory_screen.dart';
 import '../features/orgs/org_settings_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/share_intake/share_intake_screen.dart';
 import '../features/usage/usage_report_screen.dart';
 import '../shared/home_shell.dart';
 
@@ -34,6 +36,10 @@ class AppRoutes {
   static const settings = '/settings';
   static const adminUsage = '/admin/usage';
   static const adminFeedback = '/admin/feedback';
+  static const legal = '/legal';
+
+  /// "Share to NexusBot": pick the chat a share goes to.
+  static const shareIntake = '/share';
 
   /// Query parameter naming a generation the chat should attach to on open
   /// (a `generation_done` push notification).
@@ -62,6 +68,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loc = state.matchedLocation;
       final isAuthRoute = loc == AppRoutes.login || loc == AppRoutes.register;
+      // The legal text is readable before signing in (linked from /login).
+      if (loc == AppRoutes.legal) return null;
       if (loc == AppRoutes.splash) {
         return auth.when(
           loading: () => null,
@@ -81,6 +89,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: AppRoutes.splash, builder: (_, __) => const SplashScreen()),
       GoRoute(path: AppRoutes.login, builder: (_, __) => const LoginScreen()),
       GoRoute(path: AppRoutes.register, builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: AppRoutes.legal, builder: (_, __) => const LegalScreen()),
       ShellRoute(
         builder: (context, state, child) => HomeShell(
           location: state.uri.path,
@@ -182,6 +191,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.settings,
             pageBuilder: (_, state) => _fadePage(state.pageKey, const SettingsScreen()),
+          ),
+          GoRoute(
+            path: AppRoutes.shareIntake,
+            pageBuilder: (_, state) => _fadePage(state.pageKey, const ShareIntakeScreen()),
           ),
         ],
       ),

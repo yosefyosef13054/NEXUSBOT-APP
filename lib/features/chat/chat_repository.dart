@@ -9,6 +9,7 @@ import '../../core/preferences.dart';
 import '../../core/sse_parser.dart';
 import '../attachments/attachment_model.dart';
 import '../orgs/orgs_repository.dart';
+import 'chat_cache.dart';
 import 'chat_models.dart';
 import 'chat_ws.dart';
 
@@ -120,6 +121,26 @@ class SendResult {
   List<ChatMessage> get replyRows => [...toolMessages, assistantMessage];
 }
 
+/// One page of `GET /sessions/{id}/messages?cursor=&limit=`: the newest
+/// messages of the active branch (oldest first within the page) and the
+/// cursor of the page before it.
+class HistoryPage {
+  const HistoryPage({required this.items, this.nextCursor});
+
+  factory HistoryPage.fromJson(Map<String, dynamic> j) => HistoryPage(
+        items: ChatRepository._messages(j['items']),
+        nextCursor: j['next_cursor'] as String?,
+      );
+
+  final List<ChatMessage> items;
+
+  /// `created_at` of the oldest message here; pass it as `cursor` for the
+  /// page before. Null when the beginning of the chat was reached.
+  final String? nextCursor;
+
+  bool get hasMore => nextCursor != null;
+}
+
 class ChatRepository {
   ChatRepository(this._client);
   final ApiClient _client;
@@ -201,13 +222,19 @@ class ChatRepository {
 
   // ---- History & branches ----
 
-  /// The active branch only (linear, oldest first).
-  Future<List<ChatMessage>> loadHistory(String sessionId, {int limit = 100}) async {
+  /// The newest [limit] messages of the active branch (linear, oldest first).
+  Future<List<ChatMessage>> loadHistory(String sessionId, {int limit = 100}) async =>
+      (await loadHistoryPage(sessionId, limit: limit)).items;
+
+  /// Cursor pagination over the active branch: without [cursor] the newest
+  /// page, with it the messages created before that timestamp
+  /// (`HistoryPage.nextCursor` of the previous page).
+  Future<HistoryPage> loadHistoryPage(String sessionId, {String? cursor, int limit = 50}) async {
     final res = await _client.request<Map<String, dynamic>>(
       '/sessions/$sessionId/messages',
-      query: {'limit': limit},
+      query: {'limit': limit, if (cursor != null) 'cursor': cursor},
     );
-    return _messages(res.data!['items']);
+    return HistoryPage.fromJson(res.data ?? const {});
   }
 
   /// `GET /sessions/{id}/messages/{message_id}/siblings` — the edits of a
@@ -750,10 +777,30 @@ final chatRepositoryProvider = FutureProvider<ChatRepository>((ref) async {
 });
 
 /// The active workspace's sessions; reloads when the workspace changes.
-final sessionListProvider = FutureProvider.autoDispose<List<ChatSession>>((ref) async {
+///
+/// Cache first: the list stored by the last successful load is emitted at
+/// once, then the fresh list replaces it (and the cache). When the server
+/// cannot be reached the cached list simply stays.
+final sessionListProvider = StreamProvider.autoDispose<List<ChatSession>>((ref) async* {
   ref.watch(activeOrgIdProvider);
+  final scope = ref.watch(cacheScopeProvider);
+  final cache = ref.watch(chatCacheProvider);
   final repo = await ref.watch(chatRepositoryProvider.future);
-  return repo.listSessions();
+  List<ChatSession>? cached;
+  try {
+    cached = await cache.readSessions(scope);
+  } catch (_) {
+    cached = null;
+  }
+  if (cached != null) yield cached;
+  try {
+    final fresh = await repo.listSessions();
+    await cache.writeSessions(scope, fresh);
+    yield fresh;
+  } catch (_) {
+    if (cached == null) rethrow;
+    // Offline: the cached list stays on screen.
+  }
 });
 
 final sessionHistoryProvider =

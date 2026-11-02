@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 
 /// Self-contained code block widget used by the markdown renderer.
 ///
 /// Shows: language pill, copy button, monospace body. Pluggable: when we wire
 /// in real syntax highlighting (`re_highlight` etc.) we only touch the body
-/// `Text` here — the chrome stays.
+/// `Text` here — the chrome stays. Code is always laid out left to right,
+/// whatever the UI language.
 class CodeBlock extends StatefulWidget {
   const CodeBlock({super.key, required this.code, this.language});
   final String code;
@@ -66,7 +68,7 @@ class _CodeBlockState extends State<CodeBlock> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  lang.isEmpty ? 'code' : lang.toLowerCase(),
+                  lang.isEmpty ? context.l10n.codeLabel : lang.toLowerCase(),
                   style: TextStyle(
                     color: t.textMuted,
                     fontSize: 11,
@@ -79,11 +81,14 @@ class _CodeBlockState extends State<CodeBlock> {
               ],
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: SelectableText(widget.code, style: mono),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: SelectableText(widget.code, style: mono),
+              ),
             ),
           ),
         ],
@@ -99,6 +104,7 @@ class _CopyChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     return Material(
       color: Colors.transparent,
@@ -117,7 +123,7 @@ class _CopyChip extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                copied ? 'Copied' : 'Copy',
+                copied ? l10n.commonCopied : l10n.commonCopy,
                 style: TextStyle(
                   color: copied ? NexusColors.success : t.textMuted,
                   fontSize: 10,

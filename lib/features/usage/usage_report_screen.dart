@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
+import '../../l10n/labels.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../orgs/orgs_repository.dart';
@@ -109,16 +110,18 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
+    final locale = Localizations.localeOf(context).toString();
     final user = ref.watch(currentUserProvider).valueOrNull;
     final org = widget.orgId == null
         ? null
         : ref.watch(orgListProvider).valueOrNull?.where((o) => o.id == widget.orgId).firstOrNull;
     final title = widget.isAdmin
-        ? 'Server usage'
+        ? l10n.usageReportServer
         : org == null
-            ? 'Usage report'
-            : (org.isPersonal ? 'Personal usage' : '${org.name} · usage');
+            ? l10n.usageReportTitle
+            : (org.isPersonal ? l10n.usageReportPersonal : l10n.usageReportOrg(org.name));
     final groupings = [
       UsageGroupBy.user,
       UsageGroupBy.model,
@@ -128,10 +131,10 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
 
     final Widget body;
     if (widget.isAdmin && user != null && !user.isServerAdmin) {
-      body = const EmptyState(
+      body = EmptyState(
         icon: Icons.lock_outline_rounded,
-        title: 'Administrators only',
-        subtitle: 'This report is available to server administrators.',
+        title: l10n.adminOnlyTitle,
+        subtitle: l10n.usageAdminOnlyBody,
       );
     } else {
       final report = _report;
@@ -143,7 +146,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
             runSpacing: NexusSpacing.sm,
             children: [
               _Chip(
-                label: 'This month',
+                label: l10n.usageThisMonthChip,
                 active: _range == _Range.thisMonth,
                 onTap: () {
                   setState(() => _applyRange(_Range.thisMonth));
@@ -151,7 +154,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
                 },
               ),
               _Chip(
-                label: 'Last 30 days',
+                label: l10n.usageLast30,
                 active: _range == _Range.last30,
                 onTap: () {
                   setState(() => _applyRange(_Range.last30));
@@ -160,9 +163,11 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
               ),
               _Chip(
                 label: _range == _Range.custom
-                    ? '${DateFormat.yMMMd().format(_from)} – '
-                        '${DateFormat.yMMMd().format(_to.subtract(const Duration(days: 1)))}'
-                    : 'Custom…',
+                    ? l10n.usageRange(
+                        DateFormat.yMMMd(locale).format(_from),
+                        DateFormat.yMMMd(locale).format(_to.subtract(const Duration(days: 1))),
+                      )
+                    : l10n.usageCustom,
                 active: _range == _Range.custom,
                 icon: Icons.date_range_rounded,
                 onTap: _pickCustom,
@@ -173,7 +178,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
           Row(
             children: [
               Text(
-                'GROUP BY',
+                l10n.usageGroupBy,
                 style: TextStyle(
                   color: t.textMuted,
                   fontSize: 10,
@@ -189,7 +194,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
                   children: [
                     for (final g in groupings)
                       _Chip(
-                        label: g.label,
+                        label: g.localized(l10n),
                         active: _groupBy == g,
                         onTap: () {
                           setState(() => _groupBy = g);
@@ -216,7 +221,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
+                  padding: const EdgeInsetsDirectional.fromSTEB(
                     NexusSpacing.lg,
                     NexusSpacing.md,
                     NexusSpacing.md,
@@ -226,7 +231,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'By ${_groupBy.label.toLowerCase()}',
+                          l10n.usageBy(_groupBy.localized(l10n).toLowerCase()),
                           style: TextStyle(
                             color: t.textPrimary,
                             fontSize: 14,
@@ -236,9 +241,9 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
                       ),
                       for (final m in UsageMetric.values)
                         Padding(
-                          padding: const EdgeInsets.only(left: 4),
+                          padding: const EdgeInsetsDirectional.only(start: 4),
                           child: _Chip(
-                            label: m.label,
+                            label: m.localized(l10n),
                             active: _metric == m,
                             onTap: () => setState(() => _metric = m),
                             dense: true,
@@ -270,11 +275,11 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
                         const SizedBox(width: NexusSpacing.sm),
                         Expanded(
                           child: Text(
-                            errorText(_error!),
+                            context.describeError(_error!),
                             style: TextStyle(color: t.textSecondary, fontSize: 13),
                           ),
                         ),
-                        TextButton(onPressed: _load, child: const Text('Retry')),
+                        TextButton(onPressed: _load, child: Text(l10n.commonRetry)),
                       ],
                     ),
                   )
@@ -304,7 +309,7 @@ class _UsageReportScreenState extends ConsumerState<UsageReportScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _loading ? null : _load,
           ),
@@ -324,6 +329,7 @@ class _TotalsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     Widget stat(String value, String label) => Expanded(
           child: Column(
@@ -345,9 +351,9 @@ class _TotalsCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          stat(formatUsd(totals.costUsd), 'cost'),
-          stat(formatTokens(totals.tokens), 'tokens'),
-          stat('${totals.messages}', 'messages'),
+          stat(formatUsd(totals.costUsd), l10n.usageCost),
+          stat(formatTokens(totals.tokens), l10n.usageTokens),
+          stat('${totals.messages}', l10n.usageMessages),
         ],
       ),
     );

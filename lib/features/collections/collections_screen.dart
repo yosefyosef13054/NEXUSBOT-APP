@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/home_shell.dart';
 import '../documents/documents_repository.dart';
 import 'collection_model.dart';
@@ -27,6 +27,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _toastError(Object e) {
+    if (mounted) _toast(context.describeError(e));
+  }
+
   Future<void> _refresh() async {
     ref.invalidate(collectionListProvider);
     try {
@@ -37,27 +41,30 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   Future<void> _create() async {
+    final l10n = context.l10n;
     final result = await showDialog<_CollectionDraft>(
       context: context,
-      builder: (_) => const _CollectionDialog(title: 'New collection', confirmLabel: 'Create'),
+      builder: (_) =>
+          _CollectionDialog(title: l10n.collectionsNew, confirmLabel: l10n.commonCreate),
     );
     if (result == null || !mounted) return;
     try {
       final repo = await ref.read(collectionsRepositoryProvider.future);
       await repo.create(name: result.name, description: result.description);
       ref.invalidate(collectionListProvider);
-      _toast('Collection “${result.name}” created');
+      _toast(l10n.collectionCreated(result.name));
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _edit(Collection c) async {
+    final l10n = context.l10n;
     final result = await showDialog<_CollectionDraft>(
       context: context,
       builder: (_) => _CollectionDialog(
-        title: 'Edit collection',
-        confirmLabel: 'Save',
+        title: l10n.collectionEdit,
+        confirmLabel: l10n.commonSave,
         initialName: c.name,
         initialDescription: c.description ?? '',
       ),
@@ -68,11 +75,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       await repo.update(c.id, name: result.name, description: result.description ?? '');
       ref.invalidate(collectionListProvider);
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
   Future<void> _delete(Collection c) async {
+    final l10n = context.l10n;
     final deleteDocuments = await showDialog<bool>(
       context: context,
       builder: (_) => _DeleteCollectionDialog(collection: c),
@@ -88,11 +96,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       }
       _toast(
         deleteDocuments
-            ? '“${c.name}” and its documents were deleted'
-            : '“${c.name}” deleted — its documents were kept',
+            ? l10n.collectionDeletedWithDocs(c.name)
+            : l10n.collectionDeletedKept(c.name),
       );
     } catch (e) {
-      _toast(errorText(e));
+      _toastError(e);
     }
   }
 
@@ -103,16 +111,17 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final collections = ref.watch(collectionListProvider);
     return Scaffold(
       backgroundColor: t.background,
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
-        title: Text('Collections', style: TextStyle(color: t.textPrimary)),
+        title: Text(l10n.collectionsTitle, style: TextStyle(color: t.textPrimary)),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refresh,
           ),
@@ -134,10 +143,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             children: [
               EmptyState(
                 icon: Icons.cloud_off_rounded,
-                title: 'Could not load collections',
-                subtitle: errorText(e),
+                title: l10n.collectionsLoadFailed,
+                subtitle: context.describeError(e),
                 action: NexusGhostButton(
-                  label: 'Retry',
+                  label: l10n.commonRetry,
                   icon: Icons.refresh_rounded,
                   onPressed: _refresh,
                 ),
@@ -151,11 +160,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                 children: [
                   EmptyState(
                     icon: Icons.collections_bookmark_rounded,
-                    title: 'Group your documents',
-                    subtitle: 'Collections are knowledge bases: put related documents '
-                        'together and scope any chat to just the ones it needs.',
+                    title: l10n.collectionsEmptyTitle,
+                    subtitle: l10n.collectionsEmptyBody,
                     action: NexusButton(
-                      label: 'Create a collection',
+                      label: l10n.collectionsCreateOne,
                       icon: Icons.add_rounded,
                       expand: false,
                       onPressed: _create,
@@ -193,7 +201,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add_rounded),
-        label: const Text('New collection', style: TextStyle(fontWeight: FontWeight.w700)),
+        label: Text(l10n.collectionsNew, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -214,6 +222,7 @@ class _CollectionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final c = collection;
     final description = c.description?.trim() ?? '';
@@ -264,7 +273,7 @@ class _CollectionTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       [
-                        '${c.documentCount} document${c.documentCount == 1 ? '' : 's'}',
+                        l10n.collectionDocCount(c.documentCount),
                         if (description.isNotEmpty) description,
                       ].join(' · '),
                       maxLines: 2,
@@ -275,16 +284,17 @@ class _CollectionTile extends StatelessWidget {
                 ),
               ),
               PopupMenuButton<String>(
+                tooltip: l10n.commonMore,
                 icon: Icon(Icons.more_horiz_rounded, size: 18, color: t.textMuted),
                 onSelected: (v) {
                   if (v == 'open') onOpen();
                   if (v == 'edit') onEdit();
                   if (v == 'delete') onDelete();
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'open', child: Text('Show documents')),
-                  PopupMenuItem(value: 'edit', child: Text('Rename / describe')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'open', child: Text(l10n.collectionShowDocuments)),
+                  PopupMenuItem(value: 'edit', child: Text(l10n.collectionRenameDescribe)),
+                  PopupMenuItem(value: 'delete', child: Text(l10n.commonDelete)),
                 ],
               ),
             ],
@@ -336,7 +346,7 @@ class _CollectionDialogState extends State<_CollectionDialog> {
   void _submit() {
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Give the collection a name');
+      setState(() => _error = context.l10n.collectionNameRequired);
       return;
     }
     Navigator.of(context).pop(
@@ -346,6 +356,7 @@ class _CollectionDialogState extends State<_CollectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       title: Text(widget.title),
       content: Column(
@@ -355,7 +366,7 @@ class _CollectionDialogState extends State<_CollectionDialog> {
             controller: _name,
             autofocus: true,
             textInputAction: TextInputAction.next,
-            decoration: InputDecoration(hintText: 'Name', errorText: _error),
+            decoration: InputDecoration(hintText: l10n.collectionNameHint, errorText: _error),
             onChanged: (_) {
               if (_error != null) setState(() => _error = null);
             },
@@ -365,13 +376,13 @@ class _CollectionDialogState extends State<_CollectionDialog> {
             controller: _description,
             minLines: 1,
             maxLines: 3,
-            decoration: const InputDecoration(hintText: 'Description (optional)'),
+            decoration: InputDecoration(hintText: l10n.collectionDescriptionHint),
             onSubmitted: (_) => _submit(),
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: _submit,
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
@@ -397,18 +408,17 @@ class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final c = widget.collection;
     return AlertDialog(
-      title: const Text('Delete collection?'),
+      title: Text(l10n.collectionDeleteTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '“${c.name}” will be removed. Its ${c.documentCount} document'
-            '${c.documentCount == 1 ? '' : 's'} stay in your library unless you '
-            'delete them too.',
+            l10n.collectionDeleteBody(c.name, c.documentCount),
             style: TextStyle(color: t.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: NexusSpacing.sm),
@@ -418,16 +428,16 @@ class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
             activeColor: NexusColors.crimson,
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Also delete the documents', style: TextStyle(fontSize: 13.5)),
+            title: Text(l10n.collectionAlsoDeleteDocs, style: const TextStyle(fontSize: 13.5)),
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(l10n.commonCancel)),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_deleteDocuments),
           style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-          child: const Text('Delete'),
+          child: Text(l10n.commonDelete),
         ),
       ],
     );

@@ -1,0 +1,1368 @@
+{
+  "@@locale": "en",
+  "appTitle": "NexusBot",
+  "commonCancel": "Cancel",
+  "commonDelete": "Delete",
+  "commonSave": "Save",
+  "commonRetry": "Retry",
+  "commonClose": "Close",
+  "commonRefresh": "Refresh",
+  "commonDone": "Done",
+  "commonApply": "Apply",
+  "commonAdd": "Add",
+  "commonEdit": "Edit",
+  "commonView": "View",
+  "commonRemove": "Remove",
+  "commonCreate": "Create",
+  "commonSettings": "Settings",
+  "commonCopy": "Copy",
+  "commonCopied": "Copied",
+  "commonMore": "More",
+  "commonLoading": "Loading…",
+  "commonNone": "None",
+  "commonAll": "All",
+  "commonSend": "Send",
+  "commonUntitled": "Untitled",
+  "errorNetwork": "Can't reach the server — check your connection.",
+  "errorTimeout": "The server took too long to answer.",
+  "errorCancelled": "The request was cancelled.",
+  "errorRequestFailed": "Request failed ({status})",
+  "@errorRequestFailed": {
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "errorWithReference": "{message} (ref {reference})",
+  "@errorWithReference": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "reference": {
+        "type": "String"
+      }
+    }
+  },
+  "splashLoading": "AI ENGINE · LOADING",
+  "loginWelcomeBack": "WELCOME BACK",
+  "authEmailHint": "Email",
+  "authPasswordHint": "Password",
+  "authEmailRequired": "Email required",
+  "authEmailInvalid": "Invalid email",
+  "authPasswordTooShort": "Password must be at least 8 characters",
+  "loginSignIn": "Sign in",
+  "loginNewPrompt": "New to NexusBot? ",
+  "loginCreateAccount": "Create an account",
+  "authLegalNotice": "By continuing you agree to the",
+  "authLegalLink": "Terms & Privacy Policy",
+  "registerCreateAccount": "CREATE ACCOUNT",
+  "registerFullNameHint": "Full name (optional)",
+  "registerPasswordHint": "Password (min 8 chars)",
+  "registerSubmit": "Create account",
+  "registerHavePrompt": "Already have an account? ",
+  "registerSignIn": "Sign in",
+  "authBack": "Back",
+  "homeWelcomeTitle": "Welcome to NexusBot",
+  "homeWelcomeSubtitle": "Start a conversation, upload documents to chat with them, or enable tools to let the AI take actions.",
+  "homeStartNewChat": "Start new chat",
+  "offlineBannerTitle": "You're offline",
+  "offlineBannerBody": "{count, plural, =0{Saved chats are shown; new messages are sent once you're back online.} =1{1 message is waiting to be sent.} other{{count} messages are waiting to be sent.}}",
+  "@offlineBannerBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "offlineBannerFailed": "{count, plural, =1{1 message could not be sent.} other{{count} messages could not be sent.}}",
+  "@offlineBannerFailed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "menuOpen": "Open menu",
+  "sidebarNewChat": "New chat",
+  "sidebarSearchHint": "Search chats and messages…",
+  "sidebarChats": "CHATS",
+  "sidebarNoChats": "No chats yet",
+  "sidebarDocuments": "Documents",
+  "sidebarCollections": "Collections",
+  "sidebarAssistants": "Assistants",
+  "sidebarMemory": "Memory",
+  "sidebarSettings": "Settings",
+  "sidebarSignOut": "Sign out",
+  "sidebarRename": "Rename",
+  "sidebarDeleteChatTitle": "Delete chat?",
+  "sidebarDeleteChatBody": "“{title}” will be removed. This can't be undone.",
+  "@sidebarDeleteChatBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "sidebarNoTitleMatch": "No chat titles match",
+  "sidebarMessages": "MESSAGES",
+  "sidebarNoMessagesMatch": "No messages match",
+  "sidebarTypeTwoChars": "Type at least two characters",
+  "sidebarRenameChat": "Rename chat",
+  "sidebarChatNameHint": "Chat name",
+  "sidebarCloseMenu": "Close menu",
+  "sidebarClearSearch": "Clear search",
+  "orgWorkspace": "Workspace",
+  "orgPersonal": "Personal",
+  "orgYourWorkspace": "Your workspace",
+  "orgRoleMembers": "{role} · {count, plural, =1{1 member} other{{count} members}}",
+  "@orgRoleMembers": {
+    "placeholders": {
+      "role": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgSwitchTooltip": "Switch workspace",
+  "orgCreateOrganization": "Create organization…",
+  "orgWorkspaceSettings": "Workspace settings",
+  "orgNewOrganizationTitle": "New organization",
+  "orgNewOrganizationBody": "A shared workspace with its own chats, documents, assistants and budget. You become its owner and can invite members by email.",
+  "orgNameHint": "Organization name",
+  "orgNameRequired": "Give the organization a name",
+  "roleOwner": "Owner",
+  "roleAdmin": "Admin",
+  "roleMember": "Member",
+  "orgRenameTitle": "Rename workspace",
+  "orgRenameHint": "Name",
+  "orgMemberAdded": "{name} added as {role}",
+  "@orgMemberAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeaveTitle": "Leave workspace?",
+  "orgRemoveMemberTitle": "Remove member?",
+  "orgLeaveBody": "You will lose access to this workspace's chats and documents.",
+  "orgRemoveMemberBody": "{name} will lose access to this workspace.",
+  "@orgRemoveMemberBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgLeave": "Leave",
+  "orgPersonalWorkspace": "Personal workspace",
+  "orgLoadFailed": "Could not load the workspace",
+  "sectionBudget": "BUDGET",
+  "orgSpendingPerMonth": "Spending per month",
+  "orgNoLimit": "No limit",
+  "orgTokensPerMonth": "Tokens per month",
+  "orgUsageReport": "Usage report",
+  "orgUsageReportValue": "By member, model or day",
+  "sectionModels": "MODELS",
+  "orgAllowedModels": "Allowed models",
+  "sectionTools": "TOOLS",
+  "orgMcpServers": "MCP servers",
+  "orgMcpValueAdmin": "External tool servers (Model Context Protocol)",
+  "orgMcpValueMember": "Only owners and admins can manage MCP servers",
+  "orgInvite": "Invite",
+  "orgAllModels": "All models",
+  "orgModelsCount": "{count} models",
+  "@orgModelsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgPlanLine": "{plan} plan · {count, plural, =1{1 member} other{{count} members}} · you are {role}",
+  "@orgPlanLine": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgRenameTooltip": "Rename",
+  "sectionMembers": "MEMBERS",
+  "orgNoMembers": "No members",
+  "orgInviteOnlyAdmins": "Only owners and admins can invite members or change roles.",
+  "orgYou": "(you)",
+  "orgMakeAdmin": "Make admin",
+  "orgMakeMember": "Make member",
+  "orgLeaveWorkspace": "Leave workspace",
+  "orgBudgetInvalid": "Enter a positive number, or leave a field empty for no limit",
+  "orgMonthlyBudget": "Monthly budget",
+  "orgBudgetBody": "When a budget is spent, members cannot start new turns until the month rolls over. Leave a field empty for no limit.",
+  "orgSpendingUsdHint": "Spending (USD)",
+  "orgTokensHint": "Tokens",
+  "orgAllModelsSubtitle": "Members may pick any model the server offers.",
+  "orgInviteEmailRequired": "Enter the member's email address",
+  "orgInviteNotFound": "No NexusBot account uses that email — ask them to register first.",
+  "orgInviteConflict": "That person is already a member of this workspace.",
+  "orgInviteTitle": "Invite a member",
+  "orgInviteBody": "The person needs a NexusBot account with this email.",
+  "orgInviteEmailHint": "name@company.com",
+  "orgRole": "Role",
+  "orgInviting": "Inviting…",
+  "usageYou": "You",
+  "usageWorkspace": "Workspace",
+  "usageSpendingBudget": "Spending budget",
+  "usageTokenBudget": "Token budget",
+  "usageOf": "{used} of {budget}",
+  "@usageOf": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageNoBudget": "This workspace has no monthly budget.",
+  "usageTokens": "tokens",
+  "usageCost": "cost",
+  "usageMessages": "messages",
+  "usageMeterUnknown": "Usage · —",
+  "usageThisMonth": "Usage this month",
+  "usageMeterRatio": "{used} / {budget}",
+  "@usageMeterRatio": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterTokens": "{used} / {budget} tokens",
+  "@usageMeterTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMeterPlain": "{tokens} tokens · {cost}",
+  "@usageMeterPlain": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaTitle": "Monthly budget spent",
+  "quotaResets": "Resets {when}",
+  "@quotaResets": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresUsd": "{used} of {budget} spent",
+  "@quotaFiguresUsd": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "quotaFiguresTokens": "{used} of {budget} tokens used",
+  "@quotaFiguresTokens": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "budget": {
+        "type": "String"
+      }
+    }
+  },
+  "usageMetricCost": "Cost",
+  "usageMetricTokens": "Tokens",
+  "usageMetricMessages": "Messages",
+  "usageGroupUser": "User",
+  "usageGroupModel": "Model",
+  "usageGroupDay": "Day",
+  "usageGroupOrg": "Organization",
+  "usageNoUsage": "No usage in this range.",
+  "usageBarCaption": "{tokens} tokens · {cost} · {count, plural, =1{1 message} other{{count} messages}}",
+  "@usageBarCaption": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      },
+      "cost": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "usageReportServer": "Server usage",
+  "usageReportTitle": "Usage report",
+  "usageReportPersonal": "Personal usage",
+  "usageReportOrg": "{name} · usage",
+  "@usageReportOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOnlyTitle": "Administrators only",
+  "usageAdminOnlyBody": "This report is available to server administrators.",
+  "usageThisMonthChip": "This month",
+  "usageLast30": "Last 30 days",
+  "usageCustom": "Custom…",
+  "usageGroupBy": "GROUP BY",
+  "usageBy": "By {group}",
+  "@usageBy": {
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "usageRange": "{from} – {to}",
+  "@usageRange": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTitleFallback": "Chat",
+  "chatSessionModelTooltip": "Session model",
+  "chatActionsTooltip": "Chat actions",
+  "chatExportMarkdown": "Export as Markdown",
+  "chatExportJson": "Export as JSON",
+  "chatCopyAsText": "Copy as plain text",
+  "chatShareLink": "Share link…",
+  "chatExported": "Exported {filename}",
+  "@chatExported": {
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
+  },
+  "chatCopiedToClipboard": "Copied to clipboard",
+  "chatPickerFailed": "Could not open the picker: {error}",
+  "@chatPickerFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeAll": "Knowledge · All",
+  "chatKnowledgeNone": "Knowledge · None",
+  "chatKnowledgeOne": "Knowledge · {name}",
+  "@chatKnowledgeOne": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatKnowledgeCount": "Knowledge · {count, plural, =1{1 collection} other{{count} collections}}",
+  "@chatKnowledgeCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatBudgetPaused": "Monthly budget spent — sending is paused",
+  "chatVisionHint": "{model} cannot read images — pick a vision model",
+  "@chatVisionHint": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatSessionModelEntry": "Session model ({model})",
+  "@chatSessionModelEntry": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "chatModelNextMessageTooltip": "Model for the next message",
+  "chatAssistantFallback": "Assistant",
+  "chatPlainChat": "Plain chat",
+  "chatEmptyTitle": "How can I help today?",
+  "chatEmptyBody": "Ask anything. Attach images or files, toggle RAG to ground answers in your documents, pick the Knowledge collections to search, or let NexusBot run tools for you.",
+  "chatSuggestSummarize": "Summarize a document",
+  "chatSuggestExplainCode": "Explain a code snippet",
+  "chatSuggestDescribePhoto": "Describe a photo",
+  "chatSuggestTranslate": "Translate text",
+  "chatLoadEarlier": "Load earlier messages",
+  "chatLoadingEarlier": "Loading earlier messages…",
+  "chatShowingCached": "Showing saved messages — refreshing when the server is reachable.",
+  "chatErrorBusy": "The assistant is still answering a previous message — wait for it to finish.",
+  "chatErrorStaleApproval": "That approval was already resolved or has expired — the chat was refreshed.",
+  "chatErrorVoiceUnavailable": "Voice is not available on this server.",
+  "chatErrorVisionRequired": "{message} Models with vision: {models}.",
+  "@chatErrorVisionRequired": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "models": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQueuedLabel": "Waiting to send…",
+  "chatQueuedFailed": "Not sent",
+  "chatRetrySend": "Retry",
+  "chatCancelSend": "Cancel",
+  "chatVoiceMessagePlaceholder": "🎤 Voice message…",
+  "msgModelTooltip": "Model: {model}",
+  "@msgModelTooltip": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "msgEdit": "Edit",
+  "msgRegenerate": "Regenerate",
+  "editorHint": "Edit your message",
+  "editorSaveSend": "Save & send",
+  "listenPlay": "Play reply",
+  "listenStop": "Stop",
+  "stoppedLabel": "Stopped",
+  "composerPaused": "Sending is paused",
+  "composerHintAttachment": "Add a message about your attachment…",
+  "composerHint": "Message NexusBot…",
+  "composerRag": "RAG",
+  "composerTools": "Tools",
+  "composerToolsCount": "Tools · {summary}",
+  "@composerToolsCount": {
+    "placeholders": {
+      "summary": {
+        "type": "String"
+      }
+    }
+  },
+  "composerSpeak": "Speak",
+  "composerSendBackground": "Send in background",
+  "composerSendTooltip": "Send",
+  "composerStopTooltip": "Stop generating",
+  "attachTooltip": "Attach",
+  "attachModelNoImages": "The selected model cannot read images",
+  "attachPhotoLibrary": "Photo library",
+  "attachTakePhoto": "Take photo",
+  "attachFile": "File",
+  "attachFileSubtitle": "PDF, Word, text, CSV, JSON or an audio clip",
+  "composerUploading": "Uploading…",
+  "siblingPrev": "Previous version",
+  "siblingNext": "Next version",
+  "feedbackRemoveUp": "Remove thumbs up",
+  "feedbackGood": "Good reply",
+  "feedbackRemoveDown": "Remove thumbs down",
+  "feedbackBad": "Bad reply",
+  "memoriesUsed": "{count, plural, =1{Used 1 memory} other{Used {count} memories}}",
+  "@memoriesUsed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "approvalRequired": "Approval required",
+  "approvalUntil": "until {time}",
+  "@approvalUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "approvalPendingBody": "NexusBot wants to run the following before it can continue.",
+  "approvalStaleBody": "This request can no longer be answered.",
+  "approvalDeny": "Deny",
+  "approvalApprove": "Approve",
+  "approvalExpired": "Approval expired",
+  "approvalApproved": "Approved",
+  "approvalDenied": "Denied",
+  "approvalResolved": "Approval already resolved",
+  "toolChip": "Tool: {name}",
+  "@toolChip": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "toolInput": "INPUT",
+  "toolError": "ERROR",
+  "toolOutput": "OUTPUT",
+  "toolDeniedBody": "This tool call was denied.",
+  "toolNoIo": "No input or output recorded.",
+  "toolStatusOk": "OK",
+  "toolStatusError": "ERROR",
+  "toolStatusDenied": "DENIED",
+  "toolStatusUnknown": "UNKNOWN",
+  "toolLatencyMs": "{ms} ms",
+  "@toolLatencyMs": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      }
+    }
+  },
+  "toolLatencyS": "{seconds} s",
+  "@toolLatencyS": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "codeLabel": "code",
+  "citationExcerptOnly": "Showing the excerpt — the full chunk is not available.",
+  "citationEmptyChunk": "(empty chunk)",
+  "citationChunkIndex": "Chunk #{index}",
+  "@citationChunkIndex": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "citationTokens": "{count} tokens",
+  "@citationTokens": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "citationChars": "chars {from}–{to}",
+  "@citationChars": {
+    "placeholders": {
+      "from": {
+        "type": "int"
+      },
+      "to": {
+        "type": "int"
+      }
+    }
+  },
+  "citationOpenDocuments": "Open in Documents",
+  "citationMatch": "{score}% match",
+  "@citationMatch": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      }
+    }
+  },
+  "citationMatchKind": "{score}% · {kind}",
+  "@citationMatchKind": {
+    "placeholders": {
+      "score": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "citationLoadFailed": "Could not load the chunk: {error}",
+  "@citationLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "toolPickerTitle": "Tools for this chat",
+  "toolPickerSubtitle": "Pick what the agent may use. Tools marked with a shield ask for your approval before they run.",
+  "toolPickerReset": "Reset to default",
+  "toolApprovalTooltip": "Asks for your approval before running",
+  "toolGroupBuiltin": "Built-in",
+  "toolMcpServer": "MCP server",
+  "knowledgeTitle": "Knowledge for this chat",
+  "knowledgeSubtitle": "Answers are grounded in the selected collections. The choice is saved as this chat's default.",
+  "knowledgeAllDocs": "All documents",
+  "knowledgeAllDocsSubtitle": "Search everything you uploaded.",
+  "collectionDocCount": "{count, plural, =1{1 document} other{{count} documents}}",
+  "@collectionDocCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "knowledgeNoCollections": "No collections yet — create one from the Collections screen.",
+  "feedbackTitle": "What went wrong?",
+  "feedbackSubtitle": "Optional — a short note helps improve the answers. The thumbs-down is recorded either way.",
+  "feedbackHint": "e.g. The answer ignored my document",
+  "modelChooseTooltip": "Choose model",
+  "assistantPickerTitle": "Start a chat with…",
+  "assistantPickerSubtitle": "An assistant brings its own instructions, model, tools and knowledge.",
+  "assistantPlainChat": "Plain chat",
+  "assistantPlainChatSubtitle": "No assistant — your default model and settings",
+  "assistantDefaultBadge": "DEFAULT",
+  "assistantMenuTooltip": "Assistant for this chat",
+  "assistantsTitle": "Assistants",
+  "assistantsLoadFailed": "Could not load assistants",
+  "assistantsCreateTitle": "Create an assistant",
+  "assistantsCreateBody": "A persona with its own instructions, model, tools and knowledge that anyone in the workspace can start a chat with.",
+  "assistantsNew": "New assistant",
+  "assistantDeleteTitle": "Delete assistant?",
+  "assistantDeleteBody": "“{name}” will be removed. Chats that used it keep their history.",
+  "@assistantDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantDeleted": "“{name}” deleted",
+  "@assistantDeleted": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantReadOnlyMessage": "Only the assistant's creator or a workspace admin can change it.",
+  "assistantHintRag": "RAG",
+  "assistantHintTools": "{count, plural, =1{1 tool} other{{count} tools}}",
+  "@assistantHintTools": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantHintMemory": "memory",
+  "assistantHintReadOnly": "read-only",
+  "assistantRemoveDefault": "Remove default",
+  "assistantMakeDefault": "Make default",
+  "assistantNameRequired": "Give the assistant a name",
+  "assistantCreated": "“{name}” created",
+  "@assistantCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantSaved": "Assistant saved",
+  "assistantLoadFailed": "Could not load the assistant",
+  "assistantReadOnlyBanner": "Read-only — {message}",
+  "@assistantReadOnlyBanner": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantNameHint": "Name",
+  "assistantDescriptionHint": "Description (shown in the picker)",
+  "assistantPromptHint": "System prompt — who the assistant is and how it should answer",
+  "sectionModel": "MODEL",
+  "assistantModelLabel": "Model",
+  "assistantWorkspaceDefault": "Workspace default",
+  "assistantCustomTemperature": "Custom temperature",
+  "assistantTemperatureDefault": "Model default — lower is more focused, higher more creative",
+  "sectionKnowledge": "KNOWLEDGE",
+  "assistantUseDocuments": "Use documents (RAG)",
+  "assistantUseDocumentsSubtitle": "Ground answers in the workspace's documents.",
+  "assistantCollectionsLabel": "Collections (none selected = all documents)",
+  "assistantUseTools": "Use tools",
+  "assistantUseToolsSubtitle": "Let the agent call tools; tools with a shield ask for approval.",
+  "assistantNoTools": "No tools are configured on this server.",
+  "sectionBehaviour": "BEHAVIOUR",
+  "assistantUseMemory": "Use memory",
+  "assistantUseMemorySubtitle": "Remember facts and preferences across chats (also needs your account setting).",
+  "assistantDefault": "Default assistant",
+  "assistantDefaultSubtitle": "Preselected in the new-chat picker for everyone in the workspace.",
+  "assistantCreateButton": "Create assistant",
+  "assistantSaveChanges": "Save changes",
+  "assistantNewTitle": "New assistant",
+  "assistantDeleteTooltip": "Delete",
+  "attachmentTranscribed": "Transcribed",
+  "attachmentAudio": "Audio",
+  "attachmentGenerated": "Generated by a tool",
+  "attachmentTextExtracted": "Text extracted",
+  "attachmentRemove": "Remove",
+  "attachmentDownload": "Download",
+  "collectionsTitle": "Collections",
+  "collectionsNew": "New collection",
+  "collectionCreated": "Collection “{name}” created",
+  "@collectionCreated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionEdit": "Edit collection",
+  "collectionDeletedWithDocs": "“{name}” and its documents were deleted",
+  "@collectionDeletedWithDocs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionDeletedKept": "“{name}” deleted — its documents were kept",
+  "@collectionDeletedKept": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "collectionsLoadFailed": "Could not load collections",
+  "collectionsEmptyTitle": "Group your documents",
+  "collectionsEmptyBody": "Collections are knowledge bases: put related documents together and scope any chat to just the ones it needs.",
+  "collectionsCreateOne": "Create a collection",
+  "collectionShowDocuments": "Show documents",
+  "collectionRenameDescribe": "Rename / describe",
+  "collectionNameRequired": "Give the collection a name",
+  "collectionNameHint": "Name",
+  "collectionDescriptionHint": "Description (optional)",
+  "collectionDeleteTitle": "Delete collection?",
+  "collectionDeleteBody": "“{name}” will be removed. {count, plural, =1{Its 1 document stays} other{Its {count} documents stay}} in your library unless you delete them too.",
+  "@collectionDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionAlsoDeleteDocs": "Also delete the documents",
+  "documentsTitle": "Documents",
+  "documentsAddFromUrl": "Add from URL",
+  "documentsUploadTitle": "Upload “{name}”",
+  "@documentsUploadTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsUpload": "Upload",
+  "documentQueued": "Document queued for indexing",
+  "documentDuplicate": "“{name}” was already uploaded — showing the existing copy",
+  "@documentDuplicate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMoveTitle": "Move “{name}”",
+  "@documentsMoveTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsMove": "Move",
+  "documentDeleteTitle": "Delete document?",
+  "documentDeleteBody": "“{name}” will be removed.",
+  "@documentDeleteBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsLoadFailed": "Could not load documents",
+  "documentsEmptyTitle": "Upload knowledge for NexusBot",
+  "documentsEmptyInCollection": "Nothing in “{name}” yet",
+  "@documentsEmptyInCollection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentsThisCollection": "this collection",
+  "documentsEmptyBody": "PDFs, DOCX, MD, TXT, HTML — or a web page by URL. Each upload is chunked, embedded, and ready for RAG.",
+  "documentsEmptyCollectionBody": "Upload a file or move documents here from their menu.",
+  "documentsUploadFile": "Upload a file",
+  "documentsUploading": "Uploading {name}…",
+  "@documentsUploading": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "documentFrom": "from {host}",
+  "@documentFrom": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "documentMoveToCollection": "Move to collection…",
+  "docStatusPending": "PENDING",
+  "docStatusIndexing": "INDEXING",
+  "docStatusIndexingPct": "INDEXING {percent}%",
+  "@docStatusIndexingPct": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "docStatusReady": "READY",
+  "docStatusFailed": "FAILED",
+  "documentsCollectionLabel": "Collection",
+  "documentsNoCollection": "No collection",
+  "documentsUrlInvalid": "Enter a full http(s):// address",
+  "documentsAddFromUrlBody": "NexusBot fetches the page and indexes it like an upload.",
+  "documentsFetching": "Fetching…",
+  "mcpDuplicateName": "A server with this name already exists in the workspace.",
+  "mcpAdded": "“{name}” added",
+  "@mcpAdded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpRemoveTitle": "Remove server?",
+  "mcpRemoveBody": "“{name}” and its tools will disappear from every chat and assistant of this workspace.",
+  "@mcpRemoveBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTitle": "MCP servers",
+  "mcpTitleOrg": "MCP servers · {name}",
+  "@mcpTitleOrg": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpLoadFailed": "Could not load the servers",
+  "mcpEmptyTitle": "No MCP servers yet",
+  "mcpEmptyBodyAdmin": "Register an HTTP or SSE Model Context Protocol server; its tools then appear in the tool picker as mcp:<server>:<tool>.",
+  "mcpEmptyBodyMember": "Only owners and admins can register MCP servers.",
+  "mcpAddServer": "Add server",
+  "mcpIntro": "Tools of enabled servers are offered to every chat and assistant of the workspace. Servers marked with a shield ask for approval before a tool runs.",
+  "mcpHeaders": "{count, plural, =1{1 header} other{{count} headers}}",
+  "@mcpHeaders": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpEnvVars": "{count, plural, =1{1 env var} other{{count} env vars}}",
+  "@mcpEnvVars": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpApprovalTooltip": "Tools ask for approval before running",
+  "mcpDisabled": "disabled",
+  "mcpSecretsStored": "{list} (stored, never shown)",
+  "@mcpSecretsStored": {
+    "placeholders": {
+      "list": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpTestConnection": "Test connection",
+  "mcpEnabled": "Enabled",
+  "mcpRequiresApproval": "Requires approval",
+  "mcpTest": "Test",
+  "mcpNameInvalid": "Name: lowercase letters, digits, \"-\" or \"_\" (e.g. github)",
+  "mcpUrlRequired": "Enter the server URL (http:// or https://)",
+  "mcpCommandRequired": "Enter the command that starts the server",
+  "mcpAddTitle": "Add MCP server",
+  "mcpEditTitle": "Edit “{name}”",
+  "@mcpEditTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpNameHint": "Name (slug, e.g. github)",
+  "mcpTransport": "Transport",
+  "mcpTransportStdio": "stdio (command on the API host)",
+  "mcpUrlHint": "https://mcp.example.com/sse",
+  "mcpHeadersHint": "Headers, one per line{suffix}\nAuthorization=Bearer …",
+  "@mcpHeadersHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpKeepStored": " (leave empty to keep the stored ones)",
+  "mcpCommandHint": "Command (e.g. npx)",
+  "mcpArgsHint": "Arguments (space separated, e.g. -y @modelcontextprotocol/server-github)",
+  "mcpEnvHint": "Environment, one per line{suffix}\nGITHUB_TOKEN=…",
+  "@mcpEnvHint": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpToolsRequireApproval": "Tools require approval",
+  "mcpToolsRequireApprovalSubtitle": "Each call pauses the turn until the user approves it.",
+  "mcpTestTitle": "Test “{name}”",
+  "@mcpTestTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnecting": "Connecting…",
+  "mcpNoAnswer": "The server did not answer",
+  "mcpTestAgain": "Test again",
+  "mcpConnectionFailed": "Connection failed: {error}",
+  "@mcpConnectionFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpConnected": "Connected in {ms} ms · {count, plural, =1{1 tool} other{{count} tools}}",
+  "@mcpConnected": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpNoTools": "The server exposes no tools.",
+  "memoryRememberTitle": "Remember something",
+  "memoryEditTitle": "Edit memory",
+  "memoryForgotten": "Forgotten",
+  "memoryForgetAllTitle": "Forget everything?",
+  "memoryForgetAllBody": "{count, plural, =1{The 1 memory} other{All {count} memories}} will be deleted. NexusBot will start learning about you again from new chats.",
+  "@memoryForgetAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryForgetAll": "Forget all",
+  "memoryTitle": "Memory",
+  "memoryForgetEverything": "Forget everything",
+  "memoryLoadFailed": "Could not load memories",
+  "memoryHeading": "What NexusBot remembers",
+  "memoryIntro": "Facts, preferences and standing instructions picked up from your chats (or added here) are woven into later conversations. Replies that used memories say so under the message.",
+  "memoryEmptyTitle": "Nothing remembered yet",
+  "memoryEmptyOn": "Chat a little, or add something NexusBot should keep in mind.",
+  "memoryEmptyOff": "Memory is off for your account.",
+  "memoryAddOne": "Add a memory",
+  "memoryAdd": "Add memory",
+  "memoryOffBanner": "Memory is off — nothing new is remembered and existing memories are not used.",
+  "memoryNeverUsed": "Never used",
+  "memoryAdded": "Added {date}",
+  "@memoryAdded": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryUsed": "Used {date}",
+  "@memoryUsed": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "memoryForget": "Forget",
+  "memoryImportanceTooltip": "Importance {level} of 5",
+  "@memoryImportanceTooltip": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "memoryContentRequired": "Write what NexusBot should remember",
+  "memoryContentHint": "e.g. I prefer short answers with code examples",
+  "memoryKind": "Kind",
+  "memoryImportance": "Importance",
+  "memoryKindFacts": "Facts",
+  "memoryKindPreferences": "Preferences",
+  "memoryKindInstructions": "Instructions",
+  "memoryKindFact": "Fact",
+  "memoryKindPreference": "Preference",
+  "memoryKindInstruction": "Instruction",
+  "shareExpiry1Day": "1 day",
+  "shareExpiry7Days": "7 days",
+  "shareExpiry30Days": "30 days",
+  "shareExpiry1Year": "1 year",
+  "shareNexusBotChat": "NexusBot chat",
+  "shareSheetFailed": "Could not open the share sheet: {error}",
+  "@shareSheetFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "shareTitle": "Share this chat",
+  "shareBody": "Anyone with the link can read the conversation (user and assistant messages) until it expires or you revoke it.",
+  "shareExpiresIn": "Expires in",
+  "shareCreating": "Creating…",
+  "shareCreateLink": "Create link",
+  "shareCreatedNotice": "Link created — copy it now, it is shown only once.",
+  "shareSystemShare": "Share…",
+  "shareActiveLinks": "ACTIVE LINKS",
+  "shareRevokeAll": "Revoke all",
+  "shareNoActive": "No active links.",
+  "shareExpired": "Expired {when}",
+  "@shareExpired": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareExpires": "Expires {when}",
+  "@shareExpires": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "shareViews": "{count, plural, =1{1 view} other{{count} views}}",
+  "@shareViews": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareRevoke": "Revoke",
+  "voiceHoldOrTap": "Hold or tap to talk",
+  "voiceRecording": "Recording — tap to send",
+  "voiceTranscribing": "Transcribing…",
+  "voiceUnavailable": "Voice input unavailable",
+  "voiceMicDenied": "Microphone access was denied",
+  "voiceStartFailed": "Could not start recording: {error}",
+  "@voiceStartFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceNothingRecorded": "Nothing was recorded",
+  "voiceRecordingFailed": "Recording failed: {error}",
+  "@voiceRecordingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceServerDefault": "Server default",
+  "adminFeedbackTitle": "Feedback",
+  "adminFeedbackOnly": "Feedback is available to server administrators.",
+  "adminFeedbackLoadFailed": "Could not load feedback",
+  "adminFeedbackEmptyTitle": "No feedback yet",
+  "adminFeedbackEmptyBody": "Thumbs up / down left on replies show up here.",
+  "adminLoadMore": "Load more",
+  "adminCountOf": "{shown} of {total}",
+  "@adminCountOf": {
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "adminNoComment": "No comment",
+  "adminThumbsUp": "Thumbs up",
+  "adminThumbsDown": "Thumbs down",
+  "adminUserSuffix": "user …{suffix}",
+  "@adminUserSuffix": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "adminOpenChat": "Open chat",
+  "settingsTitle": "Settings",
+  "settingsSaveModelFailed": "Could not save the default model: {error}",
+  "@settingsSaveModelFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsMemoryUpdateFailed": "Could not update memory: {error}",
+  "@settingsMemoryUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDisplayName": "Display name",
+  "settingsYourName": "Your name",
+  "settingsDisplayNameUpdated": "Display name updated",
+  "settingsPasswordChanged": "Password changed. Other devices have been signed out.",
+  "settingsSignOutEverywhereTitle": "Sign out everywhere?",
+  "settingsSignOutEverywhereBody": "Every device signed in to this account will have to sign in again.",
+  "settingsSignOutEverywhere": "Sign out everywhere",
+  "settingsDeleteAllChatsTitle": "Delete all chats?",
+  "settingsDeleteAllChatsBody": "This deletes every chat session for your account. Documents are preserved.",
+  "settingsDeleteAll": "Delete all",
+  "settingsDeletedChats": "{count, plural, =1{Deleted 1 chat} other{Deleted {count} chats}}",
+  "@settingsDeletedChats": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDeleteAccountTitle": "Delete account?",
+  "settingsDeleteAccountBody": "Your account, chats and documents will be removed. This can't be undone. Enter your password to confirm.",
+  "settingsDeleteAccount": "Delete account",
+  "settingsSignedIn": "Signed in",
+  "sectionWorkspace": "WORKSPACE",
+  "settingsActiveWorkspace": "Active workspace",
+  "settingsOrgRole": "{name} · {role}",
+  "@settingsOrgRole": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsManageWorkspace": "Manage workspace",
+  "settingsManageWorkspaceSubtitle": "Name, budgets, allowed models, members.",
+  "settingsUsageReportSubtitle": "Tokens, cost and messages by member, model or day.",
+  "settingsAssistantsSubtitle": "Personas to start chats with.",
+  "sectionUsage": "USAGE",
+  "settingsLoadingUsage": "Loading usage…",
+  "settingsUsageFailed": "Could not load usage: {error}",
+  "@settingsUsageFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sectionAppearance": "APPEARANCE",
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "settingsLanguage": "Language",
+  "settingsLanguageSystem": "System language",
+  "sectionChat": "CHAT",
+  "settingsStream": "Stream responses",
+  "settingsStreamSubtitle": "Token-by-token delivery. Off = wait for full reply.",
+  "settingsRag": "Use RAG by default",
+  "settingsRagSubtitle": "Ground replies in your uploaded documents.",
+  "settingsTools": "Use tools by default",
+  "settingsToolsSubtitle": "Let the agent call tools (calculator, search, …) in new chats.",
+  "settingsMemory": "Memory",
+  "settingsMemorySubtitle": "Remember facts and preferences from chats and use them later.",
+  "settingsWhatRemembers": "What NexusBot remembers",
+  "settingsWhatRemembersSubtitle": "Review, edit or forget memories.",
+  "settingsTransport": "Stream transport",
+  "settingsTransportSse": "Server-Sent Events",
+  "settingsTransportWs": "WebSocket",
+  "sectionVoice": "VOICE",
+  "settingsSpeakReplies": "Speak replies",
+  "settingsSpeakRepliesSubtitle": "Read every reply aloud as it arrives (text-to-speech by {provider}).",
+  "@settingsSpeakRepliesSubtitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsVoice": "Voice",
+  "settingsVoiceInput": "Voice input",
+  "settingsVoiceInputValue": "Hold the microphone in a chat",
+  "settingsLoadingModels": "Loading models from the server…",
+  "settingsModelsFailed": "Could not load models: {error}",
+  "@settingsModelsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsNoProviders": "No model providers are configured on this server.",
+  "settingsModelNote": "Used for new chats. Each chat can switch models from its header, and the composer can override it per message. Pull to refresh the list.",
+  "modelNoTools": "no tools",
+  "modelVision": "vision",
+  "sectionAdministration": "ADMINISTRATION",
+  "settingsServerUsage": "Server usage",
+  "settingsServerUsageSubtitle": "Every workspace, by organization, user, model or day.",
+  "settingsFeedback": "Feedback",
+  "settingsFeedbackSubtitle": "Thumbs up / down left on replies.",
+  "sectionConnection": "CONNECTION",
+  "settingsApiBaseUrl": "API base URL",
+  "sectionSecurity": "SECURITY",
+  "settingsBiometric": "Biometric unlock",
+  "settingsBiometricSubtitle": "Ask for your fingerprint, face or passcode when the app opens.",
+  "settingsBiometricUnavailable": "This device cannot authenticate with biometrics or a passcode.",
+  "sectionOffline": "OFFLINE",
+  "settingsClearCache": "Clear saved chats",
+  "settingsClearCacheSubtitle": "Remove the sessions and messages stored on this device for offline use.",
+  "settingsCacheCleared": "Saved chats removed",
+  "sectionAccount": "ACCOUNT",
+  "settingsNotSet": "Not set",
+  "settingsChangePassword": "Change password",
+  "settingsChangePasswordSubtitle": "Signs out every other device.",
+  "settingsClearAllChats": "Clear all chats",
+  "settingsClearAllChatsSubtitle": "Remove every chat session.",
+  "settingsSignOut": "Sign out",
+  "settingsSignOutEverywhereSubtitle": "Revoke every signed-in device.",
+  "settingsDeleteAccountSubtitle": "Permanently remove your account and data.",
+  "sectionAbout": "ABOUT",
+  "settingsVersion": "Version",
+  "settingsLegal": "Privacy policy & terms",
+  "settingsLegalSubtitle": "How your data is handled and the rules of use.",
+  "settingsLicenses": "Open-source licenses",
+  "settingsLicensesSubtitle": "Third-party packages this app is built with.",
+  "settingsFooter": "NexusBot v{version} · FastAPI · LangChain · Flutter",
+  "@settingsFooter": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsCurrentPassword": "Current password",
+  "settingsCurrentPasswordRequired": "Enter your current password",
+  "settingsNewPasswordHint": "New password (min 8 chars)",
+  "settingsRepeatPassword": "Repeat new password",
+  "settingsPasswordsMismatch": "Passwords don't match",
+  "legalTitle": "Privacy & Terms",
+  "legalPrivacyTab": "Privacy policy",
+  "legalTermsTab": "Terms of service",
+  "legalUpdated": "Last updated {date}",
+  "@legalUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP1": "NexusBot stores the chats, documents, attachments and memories you create so it can answer you and show them again on your devices. They live on the server you connect to ({baseUrl}) and, for offline use, in a cache on this device.",
+  "@legalPrivacyP1": {
+    "placeholders": {
+      "baseUrl": {
+        "type": "String"
+      }
+    }
+  },
+  "legalPrivacyP2": "Your messages and attachments are sent to the AI model providers the server is configured with, only to generate replies. Workspace administrators can see usage figures (tokens, cost, message counts) but not your conversations.",
+  "legalPrivacyP3": "You can export or delete any chat, forget memories and delete your account at any time from Settings. Deleting your account removes your data from the server; clearing the saved chats removes it from this device.",
+  "legalPrivacyP4": "The app contains no advertising and no trackers. Optional crash reporting is only active when the operator enables it at build time.",
+  "legalTermsP1": "Use NexusBot lawfully and respectfully: do not upload content you have no right to share, do not try to break the service and do not use it to harm others.",
+  "legalTermsP2": "Replies are generated by AI models and may be inaccurate. Check important information before relying on it.",
+  "legalTermsP3": "The service is provided as is, without warranty. Workspace owners are responsible for the members they invite and the budgets they set.",
+  "legalTermsP4": "Questions? Contact the operator of the server you connect to.",
+  "shareIntakeTitle": "Share to NexusBot",
+  "shareIntakeSubtitle": "Choose the chat to send it to.",
+  "shareIntakeNewChat": "New chat",
+  "shareIntakeFiles": "{count, plural, =1{1 file} other{{count} files}}",
+  "@shareIntakeFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shareIntakeNoChats": "No chats yet — start a new one.",
+  "shareIntakeAttachFailed": "Could not attach {name}",
+  "@shareIntakeAttachFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shareIntakeExisting": "Existing chats",
+  "lockTitle": "NexusBot is locked",
+  "lockBody": "Unlock with your fingerprint, face or device passcode to continue.",
+  "lockUnlock": "Unlock",
+  "lockReason": "Unlock NexusBot",
+  "lockFailed": "Could not verify — try again.",
+  "lockSignOut": "Sign out instead",
+  "shortcutHintNewChat": "Ctrl+N"
+}

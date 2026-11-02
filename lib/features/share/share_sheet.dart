@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:share_plus/share_plus.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/theme.dart';
+import '../../l10n/l10n.dart';
 import 'share_model.dart';
 import 'share_repository.dart';
 
 /// Expiry choices for a new link (hours).
-const shareExpiryOptions = [
-  (label: '1 day', hours: 24),
-  (label: '7 days', hours: 24 * 7),
-  (label: '30 days', hours: 24 * 30),
-  (label: '1 year', hours: 24 * 365),
-];
+const shareExpiryHours = [24, 24 * 7, 24 * 30, 24 * 365];
+
+/// Translated label of one of [shareExpiryHours].
+String shareExpiryLabel(AppLocalizations l10n, int hours) => switch (hours) {
+      24 => l10n.shareExpiry1Day,
+      168 => l10n.shareExpiry7Days,
+      720 => l10n.shareExpiry30Days,
+      _ => l10n.shareExpiry1Year,
+    };
 
 /// Opens the share-links sheet of a conversation: create a read-only link
 /// (shown once, with copy + system share), list the active ones with their
@@ -44,7 +47,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
   List<ShareLink>? _links;
   String? _loadError;
   bool _creating = false;
-  int _expiryHours = shareExpiryOptions[1].hours;
+  int _expiryHours = shareExpiryHours[1];
 
   /// The link just created — its URL is only known now.
   ShareLink? _created;
@@ -68,7 +71,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loadError = errorText(e));
+      setState(() => _loadError = context.describeError(e));
     }
   }
 
@@ -90,7 +93,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
       });
       await _load();
     } catch (e) {
-      _toast(errorText(e));
+      if (mounted) _toast(context.describeError(e));
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -107,10 +110,12 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
   Future<void> _systemShare() async {
     final url = _createdUrl;
     if (url == null) return;
+    final l10n = context.l10n;
     try {
-      await SharePlus.instance.share(ShareParams(uri: Uri.parse(url), title: 'NexusBot chat'));
+      await SharePlus.instance
+          .share(ShareParams(uri: Uri.parse(url), title: l10n.shareNexusBotChat));
     } catch (e) {
-      _toast('Could not open the share sheet: $e');
+      _toast(l10n.shareSheetFailed('$e'));
     }
   }
 
@@ -127,12 +132,13 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
       }
       await _load();
     } catch (e) {
-      _toast(errorText(e));
+      if (mounted) _toast(context.describeError(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
     final links = _links;
@@ -145,29 +151,28 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
             shrinkWrap: true,
             children: [
               Text(
-                'Share this chat',
+                l10n.shareTitle,
                 style: TextStyle(color: t.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
-              Text(
-                'Anyone with the link can read the conversation (user and assistant messages) '
-                'until it expires or you revoke it.',
-                style: TextStyle(color: t.textSecondary, fontSize: 12.5),
-              ),
+              Text(l10n.shareBody, style: TextStyle(color: t.textSecondary, fontSize: 12.5)),
               const SizedBox(height: NexusSpacing.md),
               Row(
                 children: [
                   Expanded(
                     child: InputDecorator(
-                      decoration: const InputDecoration(labelText: 'Expires in', isDense: true),
+                      decoration: InputDecoration(labelText: l10n.shareExpiresIn, isDense: true),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
                           isExpanded: true,
                           isDense: true,
                           value: _expiryHours,
                           items: [
-                            for (final o in shareExpiryOptions)
-                              DropdownMenuItem(value: o.hours, child: Text(o.label)),
+                            for (final hours in shareExpiryHours)
+                              DropdownMenuItem(
+                                value: hours,
+                                child: Text(shareExpiryLabel(l10n, hours)),
+                              ),
                           ],
                           onChanged: _creating
                               ? null
@@ -187,7 +192,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
                         : const Icon(Icons.link_rounded, size: 16),
-                    label: Text(_creating ? 'Creating…' : 'Create link'),
+                    label: Text(_creating ? l10n.shareCreating : l10n.shareCreateLink),
                   ),
                 ],
               ),
@@ -204,7 +209,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Link created — copy it now, it is shown only once.',
+                        l10n.shareCreatedNotice,
                         style: TextStyle(
                           color: t.textPrimary,
                           fontSize: 12.5,
@@ -214,6 +219,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                       const SizedBox(height: NexusSpacing.xs),
                       SelectableText(
                         _createdUrl ?? _created!.token ?? '',
+                        textDirection: TextDirection.ltr,
                         style: TextStyle(color: t.textSecondary, fontSize: 12.5),
                       ),
                       const SizedBox(height: NexusSpacing.sm),
@@ -226,12 +232,12 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                               size: 16,
                               color: _copied ? NexusColors.success : null,
                             ),
-                            label: Text(_copied ? 'Copied' : 'Copy'),
+                            label: Text(_copied ? l10n.commonCopied : l10n.commonCopy),
                           ),
                           TextButton.icon(
                             onPressed: _systemShare,
                             icon: const Icon(Icons.ios_share_rounded, size: 16),
-                            label: const Text('Share…'),
+                            label: Text(l10n.shareSystemShare),
                           ),
                         ],
                       ),
@@ -243,7 +249,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
               Row(
                 children: [
                   Text(
-                    'ACTIVE LINKS',
+                    l10n.shareActiveLinks,
                     style: TextStyle(
                       color: t.textMuted,
                       fontSize: 10,
@@ -255,7 +261,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                   if (links != null && links.length > 1)
                     TextButton(
                       onPressed: () => _revoke(null),
-                      child: const Text('Revoke all'),
+                      child: Text(l10n.shareRevokeAll),
                     ),
                 ],
               ),
@@ -270,7 +276,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                           style: TextStyle(color: t.textSecondary, fontSize: 12.5),
                         ),
                       ),
-                      TextButton(onPressed: _load, child: const Text('Retry')),
+                      TextButton(onPressed: _load, child: Text(l10n.commonRetry)),
                     ],
                   ),
                 )
@@ -289,7 +295,7 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: NexusSpacing.sm),
                   child: Text(
-                    'No active links.',
+                    l10n.shareNoActive,
                     style: TextStyle(color: t.textMuted, fontSize: 12.5),
                   ),
                 )
@@ -302,10 +308,10 @@ class _ShareLinksSheetState extends ConsumerState<ShareLinksSheet> {
                   ),
               const SizedBox(height: NexusSpacing.sm),
               Align(
-                alignment: Alignment.centerRight,
+                alignment: AlignmentDirectional.centerEnd,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Done'),
+                  child: Text(l10n.commonDone),
                 ),
               ),
             ],
@@ -331,8 +337,10 @@ class ShareLinkTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
-    final expires = DateFormat.yMMMd().add_jm().format(link.expiresAt.toLocal());
+    final locale = Localizations.localeOf(context).toString();
+    final expires = DateFormat.yMMMd(locale).add_jm().format(link.expiresAt.toLocal());
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -342,15 +350,13 @@ class ShareLinkTile extends StatelessWidget {
         color: highlighted ? NexusColors.crimson : t.textSecondary,
       ),
       title: Text(
-        link.isExpired ? 'Expired $expires' : 'Expires $expires',
+        link.isExpired ? l10n.shareExpired(expires) : l10n.shareExpires(expires),
         style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(
-        '${link.views} view${link.views == 1 ? '' : 's'}',
-        style: TextStyle(color: t.textMuted, fontSize: 12),
-      ),
+      subtitle:
+          Text(l10n.shareViews(link.views), style: TextStyle(color: t.textMuted, fontSize: 12)),
       trailing: IconButton(
-        tooltip: 'Revoke',
+        tooltip: l10n.shareRevoke,
         icon: Icon(Icons.link_off_rounded, size: 18, color: t.textSecondary),
         onPressed: onRevoke,
       ),

@@ -52,6 +52,12 @@ NexusBot's Flutter app is a thin, well-architected client over the NexusBot REST
 - 🧩 **MCP servers** — org admins register Model Context Protocol tool servers (HTTP / SSE; stdio for server admins), test the connection and toggle approval; the tool picker groups tools by **Built-in** / server.
 - 📤 **Export & share** — download a chat as Markdown or JSON (share sheet / browser download) or mint a read-only link with an expiry, copy / share it, and revoke links from a sheet.
 - 🔔 **Push notifications** — a `PushService` abstraction registers the device token with `/devices` and routes `generation_done` taps to the chat, attaching to the finished generation (FCM is a documented stub behind `--dart-define=PUSH_PROVIDER=fcm`).
+- 📴 **Offline-first** — the session list, the last 100 messages of every chat you open, your assistants and your profile are cached on the device (per user and workspace). Chats open from the cache and refresh over the network, older history loads on demand (`?cursor=` pagination), and a message sent while offline — or into a dropped connection — shows as *Queued* and is replayed in order on reconnect through `POST /messages/background` with its original `Idempotency-Key`. A banner shows the offline state and the queue.
+- 🌍 **Localized & RTL-ready** — English, Hebrew and Arabic (ICU plurals) from ARB files through `flutter gen-l10n`; the language follows the device or a Settings choice, and every layout uses logical (start / end) geometry so Hebrew and Arabic mirror correctly while code blocks and JSON stay left-to-right.
+- 📥 **Share into NexusBot** — the system share sheet (text, links, images, PDF, Word, Markdown, CSV, HTML, audio) opens a chat picker: start a new chat or pick an existing one; text prefills the composer and files upload as attachments. Wired for Android; the iOS share extension is documented below.
+- ⌨️ **Desktop shortcuts** — Ctrl / ⌘ N starts a chat, Ctrl / ⌘ K focuses search, Esc stops a reply, Enter sends and Shift + Enter inserts a newline (desktop and web only).
+- 🔒 **Biometric lock** — optional Face ID / Touch ID / fingerprint unlock (`local_auth`) on cold start and after two minutes in the background; off by default.
+- 📜 **Store-ready** — a `/legal` screen (privacy policy + terms template), an About section with the running version (`package_info_plus`) and licences, optional Sentry crash reporting (`--dart-define=SENTRY_DSN=…`), fastlane lanes for Play internal testing and TestFlight, and a tag-triggered release workflow.
 - 🔐 **JWT auth** — register / login, tokens stored in the platform secure store, with **transparent, single-flight access-token refresh** on `401` (and proactively before a stream opens). Rotating refresh tokens, server-side sign-out, change password, edit display name and delete account.
 - 📄 **Document upload** — pick a file, upload, and watch ingest status update.
 - 🎨 **Adaptive, branded UI** — a navigation **drawer on mobile** and a **persistent sidebar on tablet/desktop**, dark/light themes, crimson brand, Markdown + syntax-highlighted code blocks.
@@ -109,7 +115,9 @@ The app follows a clean **feature-first** structure with a small shared core. St
 | `/orgs/:id/usage` | Usage report | Owner / admin: date range, group by user / model / day, bar list. |
 | `/orgs/:id/mcp` | MCP servers | Owner / admin: list, add (HTTP / SSE; stdio for server admins), edit, test connection, enable / approval toggles, remove. Linked from the workspace screen. |
 | `/admin/usage`, `/admin/feedback` | Administration | Server admins only (`UserRead.role == "admin"`): cross-org usage, feedback inbox. |
-| `/settings` | Settings | Workspace, usage, appearance, chat defaults (incl. memory), voice (speak replies, voice), model (from the server), administration, account. |
+| `/settings` | Settings | Workspace, usage, appearance, language, chat defaults (incl. memory), voice, model (from the server), security (biometric unlock), offline (clear saved chats), administration, about (version, privacy & terms, licences), account. |
+| `/share` | Share intake | Opened when something is shared into the app: a preview of the text / files, **New chat** or an existing chat to continue in; the chat then opens with the composer prefilled and the files uploading. |
+| `/legal` | Privacy & terms | Reachable signed-out; linked from the login screen and Settings → About. |
 
 Everything below the auth screens lives inside one `ShellRoute` (`shared/home_shell.dart`), so the drawer (mobile) / persistent sidebar (tablet, desktop) never remounts between pages. Sidebar taps and **New chat** simply `context.go(...)`.
 
@@ -230,6 +238,40 @@ The sidebar search filters chat titles locally and, after a 350 ms debounce, cal
 - Before an SSE or WebSocket stream opens, `ensureFreshAccessToken()` decodes the JWT's `exp` and refreshes if it is within 60 s, so a long reply never dies mid-stream on an expiring token.
 - Settings → **Account** exposes display name (`PATCH /auth/me`), change password (`POST /auth/change-password`, keeps this device signed in), sign out everywhere (`POST /auth/logout-all`) and delete account (`DELETE /auth/me`, password-confirmed).
 
+### Offline-first & sync
+
+- `core/local_store.dart` — `LocalStore` is the one persistence seam: `JsonFileLocalStore` keeps one JSON document per key under `getApplicationSupportDirectory()/nexusbot_cache` (atomic write through a temp file + rename, memory fallback where no directory exists), `MemoryLocalStore` backs the tests.
+- `features/chat/chat_cache.dart` — `ChatCache` stores the session list, the newest 100 messages (+ `next_cursor`) of every chat that was opened, the assistant list and the signed-in profile, all scoped by `<user>:<org>` so workspaces and accounts never see each other's data. Settings → **OFFLINE → Clear saved chats** wipes it (queued sends are kept).
+- **Cache first, network second.** `sessionListProvider` yields the cached list and then the server's; a chat opens with its cached page (`fromCache`) and replaces it when `GET /sessions/{id}/messages?limit=50` answers; a network failure with a cached copy is silent, without one it is the usual error state. `currentUserProvider` falls back to the cached profile when `/auth/me` is unreachable, so the app opens offline instead of bouncing to login.
+- **Pagination.** `ChatRepository.loadHistoryPage(sessionId, cursor:, limit:)` reads `{items, next_cursor}`; the chat screen shows **Load earlier messages** while `next_cursor` is set (`ChatController.loadOlder`).
+- `features/chat/send_queue.dart` — `SendQueue` replays sends the app could not deliver: offline (`ConnectivityService.checkOnline()`), or a transport failure while opening the turn (`ApiException.isTransient`: no network, timeout, 5xx). The optimistic bubble turns into *Queued*, the `QueuedSend` (text, attachments, tool / model / knowledge overrides, voice reply, **the same `Idempotency-Key`**) is persisted, and the queue drains in order through `POST /sessions/{id}/messages/background` with exponential backoff (1 s → 60 s, 8 attempts). A refusal the queue cannot fix (validation, quota) parks the send with **Retry** / **Cancel** on the bubble; an accepted replay swaps the bubble for the persisted message and the open chat attaches to the generation.
+- `core/connectivity.dart` + `core/sync.dart` — `ConnectivityService` wraps `connectivity_plus` (`ManualConnectivityService` in tests); `SyncCoordinator` watches it and, on every reconnect, refreshes the session list and usage, bumps `reconnectTickProvider` (open chats reload their newest page and re-attach to `/generations/active`) and drains the queue. `shared/offline_banner.dart` sits above the shell with *You're offline* / *n queued* / *n failed*.
+
+### Localization & RTL
+
+- Strings live in `lib/l10n/app_en.arb` (template), `app_he.arb` and `app_ar.arb`; `l10n.yaml` points `flutter gen-l10n` at `lib/l10n/generated/` (git-ignored — `flutter pub get` regenerates it because `generate: true` is set in `pubspec.yaml`, and CI / the fastlane lanes run `flutter gen-l10n` explicitly). Widgets read `context.l10n`; enum labels (roles, document status, memory kinds, tool status, …) come from `lib/l10n/labels.dart`; API errors are translated by `context.describeError` (transport failures get a localized text, server messages are kept verbatim with their `request_id`).
+- Settings → **LANGUAGE** picks *System* / English / עברית / العربية (`AppLanguage`, stored in preferences); `MaterialApp.router` gets `locale`, the delegates and the supported locales from the generated class.
+- RTL: layouts use `EdgeInsetsDirectional`, `AlignmentDirectional`, `BorderDirectional` and `BorderRadiusDirectional`, bubbles and the sidebar mirror, the sibling switcher swaps its arrows, and code blocks / JSON / the API URL are wrapped in `Directionality(ltr)`. `test/rtl_and_shortcuts_test.dart` renders the chat screen, the composer and the sidebar under `TextDirection.rtl`; `test/l10n_test.dart` checks that every locale has exactly the English keys with the same placeholders.
+
+### Share intake
+
+- `features/share_intake`: `IncomingShareService` (`ReceiveSharingIntentService` over `receive_sharing_intent` on Android / iOS, `NoopIncomingShareService` elsewhere) streams `IncomingShare`s (text / URL and file references) into `pendingShareProvider`; `ShareIntakeRouter` sends the signed-in app to `/share`, where `ShareIntakeScreen` previews the content and offers **New chat** or an existing chat. The choice becomes a `ComposerDraft` (`composerDraftProvider`) that the chat screen consumes on open: text goes into the composer, files are uploaded through the attachments repository and appear as chips.
+- **Android** is wired: `AndroidManifest.xml` declares `SEND` / `SEND_MULTIPLE` filters for `text/plain`, `image/*`, PDF, JSON, Word, Markdown, CSV, HTML and `audio/*`, and the activity is `singleTask` so a share lands in the running app.
+- **iOS** needs a Share Extension target, which this repository does not create (it has to be added in Xcode with the team's signing). Steps, for `receive_sharing_intent` 1.9:
+  1. Xcode → File → New → Target → **Share Extension**, named `Share Extension`, bundle id `<app bundle id>.ShareExtension`, deployment target ≥ iOS 13.
+  2. Add the same **App Group** (`group.<app bundle id>`) to the Runner and the extension under Signing & Capabilities.
+  3. In both `Info.plist`s add `AppGroupId` = `group.<app bundle id>`; in the Runner's add a `CFBundleURLTypes` entry with the scheme `ShareMedia-<app bundle id>`; in the extension's set `NSExtensionPrincipalClass` to `$(PRODUCT_MODULE_NAME).ShareViewController`, remove `NSExtensionMainStoryboard` and set the `NSExtensionActivationRule` dictionary (`NSExtensionActivationSupportsText`, `…WebURLWithMaxCount`, `…ImageWithMaxCount`, `…FileWithMaxCount`).
+  4. Replace the generated `ShareViewController.swift` with `import receive_sharing_intent` + `class ShareViewController: RSIShareViewController {}` (optionally override `shouldAutoRedirect()` to return `true` so the share opens the app at once).
+  5. Add the extension target to `ios/Podfile` (`target 'Share Extension' do … pod 'receive_sharing_intent', :path => '.symlinks/plugins/receive_sharing_intent/ios' end`) and run `pod install`.
+  The Dart side needs nothing else: the plugin delivers the share through the same stream the Android path uses.
+
+### Keyboard shortcuts, app lock, legal & crash reporting
+
+- `AppShortcuts` (in `shared/home_shell.dart`) binds **Ctrl / ⌘ N** → new chat (assistant picker) and **Ctrl / ⌘ K** → sidebar search; the chat screen binds **Esc** → stop the running generation; the composer sends on **Enter** and inserts a newline on **Shift + Enter** on desktop and web only (`enterSendsOnThisPlatform`) — on phones Enter stays a newline and the send button sends.
+- `features/security/lock_gate.dart`: `AppLockController` locks on cold start when **Settings → SECURITY → Unlock with biometrics** is on and again after `relockAfter` (2 min) in the background; `LockGate` (installed through `MaterialApp.builder`) covers the app with `LockScreen` until `BiometricAuthenticator.authenticate` succeeds. `core/biometric_auth.dart` wraps `local_auth` (`LocalAuthBiometricAuthenticator`; `UnavailableBiometricAuthenticator` on platforms without it, which also hides the switch).
+- `features/legal/legal_screen.dart` renders a short privacy policy + terms **template** (it names the configured API host) at `/legal`, linked from the login screen and Settings → **ABOUT**, which also shows the version from `AppInfoService` (`package_info_plus`, `AppInfo.fallback` mirrors `pubspec.yaml`) and the open-source licences page.
+- `main.dart` initialises `sentry_flutter` only when `SENTRY_DSN` is non-empty (`sendDefaultPii: false`, 10 % tracing, `SENTRY_ENVIRONMENT` tag); without it the app never loads Sentry.
+
 ### The streaming wire format
 
 Both SSE and WebSocket deliver the same discriminated events (parsed by the sealed `StreamEvent` in `features/chat/chat_models.dart`):
@@ -290,7 +332,10 @@ The chat controller appends `token` events to a live buffer, swaps in `citations
 | UI | `google_fonts`, `flutter_svg`, `flutter_markdown`, `markdown` |
 | Media | `image_picker` (photos), `file_picker` (files), `record` (microphone), `just_audio` (spoken replies) |
 | Sharing | `share_plus`, `path_provider` (exports / downloads), `web` (browser download) |
-| Utilities | `intl`, `uuid`, `collection` |
+| Localization | `flutter_localizations`, `intl` (ARB → `flutter gen-l10n`) |
+| Offline & device | `connectivity_plus` (behind `ConnectivityService`), `path_provider` (JSON cache), `package_info_plus` (About), `local_auth` (app lock), `receive_sharing_intent` (share intake) |
+| Monitoring | `sentry_flutter` (only with `SENTRY_DSN`) |
+| Utilities | `uuid`, `collection` |
 | Tooling | `flutter_lints`, `flutter_launcher_icons` |
 
 ---
@@ -361,6 +406,10 @@ flutter run \
 | Knowledge per chat | Composer → Knowledge chip (stored as `session.meta.collection_ids`) | All documents |
 | Active workspace | Sidebar header (stored per user on the device; sent as `X-Org-Id`) | Personal |
 | Memory | Settings screen (`PATCH /auth/me {memory_enabled}`) | On |
+| `SENTRY_DSN` | `--dart-define` at build / run; empty = Sentry is never initialised. `SENTRY_ENVIRONMENT` tags the events. | empty (off), `production` |
+| Language | Settings → LANGUAGE: System / English / עברית / العربية (stored on the device) | System |
+| Biometric unlock | Settings → SECURITY (shown only when the device can authenticate) | Off |
+| Saved chats | Settings → OFFLINE → **Clear saved chats** wipes the on-device cache (queued sends are kept) | — |
 
 The app has **no embedded secrets** — authentication is entirely token-based against the backend.
 
@@ -377,7 +426,7 @@ lib/
 │  ├─ api_exception.dart     # Typed error envelope (code · message · request_id)
 │  ├─ auth_session.dart      # TokenRefresher: single-flight refresh + proactive JWT exp check
 │  ├─ sse_parser.dart        # Pure-Dart text/event-stream frame decoder
-│  ├─ env.dart               # API_BASE_URL / WS URL / USE_WEBSOCKET / PUSH_PROVIDER (dart-define)
+│  ├─ env.dart               # API_BASE_URL / WS URL / USE_WEBSOCKET / PUSH_PROVIDER / SENTRY_DSN (dart-define)
 │  ├─ file_sink.dart         # FileSink: share sheet (io) / browser download (web) for exports and artifacts
 │  ├─ router.dart            # go_router shell routes + auth redirect
 │  ├─ secure_storage.dart    # Token storage (Keychain / Keystore)
@@ -386,33 +435,51 @@ lib/
 │  ├─ pretty_json.dart       # Pretty-prints tool inputs / outputs
 │  ├─ theme.dart             # Brand colors, typography, spacing tokens
 │  ├─ breakpoints.dart       # Adaptive layout breakpoints
-│  └─ widgets.dart           # Shared UI primitives
+│  ├─ widgets.dart           # Shared UI primitives
+│  ├─ local_store.dart       # LocalStore: one JSON file per key (memory implementation for tests)
+│  ├─ connectivity.dart      # ConnectivityService (connectivity_plus / manual) + isOnlineProvider
+│  ├─ sync.dart              # SyncCoordinator: refresh lists, re-attach, drain the send queue on reconnect
+│  ├─ app_info.dart          # AppInfoService (package_info_plus) → About version
+│  └─ biometric_auth.dart    # BiometricAuthenticator (local_auth) behind an interface
+├─ l10n/
+│  ├─ app_en.arb · app_he.arb · app_ar.arb   # every user-visible string (ICU plurals)
+│  ├─ l10n.dart              # context.l10n, AppLanguage, localized error text
+│  ├─ labels.dart            # localized labels for enums (roles, statuses, kinds, …)
+│  └─ generated/             # flutter gen-l10n output (git-ignored; `flutter pub get` rebuilds it)
 ├─ features/
 │  ├─ admin/                 # server-admin feedback inbox (+ repository)
 │  ├─ assistants/            # personas: model · repository · list · editor form · new-chat picker / header menu
 │  ├─ attachments/           # Attachment model · repository (upload, content w/ 307) · picker · AuthenticatedImage, chips, grid, artifact card, viewer
 │  ├─ auth/                  # login · register · splash · repository (default_model, memory_enabled) · providers
-│  ├─ chat/                  # chat screen · controller (resume, attach, edit, branch, quota, attachments, voice, audio)
-│  │                         # · repository (ChatTurn + generation tracking, approvals, siblings/branch, feedback,
-│  │                         # background, attachment_ids / voice_reply) · models · WS · approval card · tool chips
-│  │                         # · citation sheet · sheets (grouped tool picker) · message extras
+│  ├─ chat/                  # chat screen · controller (resume, attach, edit, branch, quota, attachments, voice, audio,
+│  │                         # cache-first load, cursor pagination, offline queue) · repository (ChatTurn + generation
+│  │                         # tracking, approvals, siblings/branch, feedback, background, paged history) · models · WS
+│  │                         # · chat_cache (LocalStore documents) · send_queue (replay with backoff) · new_chat
+│  │                         # · approval card · tool chips · citation sheet · sheets (grouped tool picker) · message extras
 │  ├─ collections/           # knowledge bases: model · repository · /collections screen
 │  ├─ mcp/                   # MCP servers: model · repository (X-Org-Id per org) · /orgs/:id/mcp screen
 │  ├─ documents/             # upload (de-dup aware, collection) · add from URL · filter · move · chunks
+│  ├─ legal/                 # /legal: privacy policy + terms template (reachable signed-out)
 │  ├─ memory/                # long-term memory: model · repository · /memory screen
 │  ├─ models/                # GET /models catalog + default-model resolution
 │  ├─ orgs/                  # organizations: model · repository + active-org providers · switcher · settings screen
 │  ├─ push/                  # devices repository · PushService (noop / FCM stub) · registrar · payload router
+│  ├─ security/              # AppLockController + LockGate / LockScreen (biometric unlock)
 │  ├─ share/                 # export + share links: model · repository · share sheet
+│  ├─ share_intake/          # IncomingShareService (receive_sharing_intent / noop) · /share chat picker · composer draft
 │  ├─ tools/                 # GET /tools catalog (+ source) · default tool selection · grouping by source
 │  ├─ usage/                 # usage model · repository + quota state · widgets (bars, meter, banner) · report screen
 │  ├─ voice/                 # capabilities + voice turns repository · Recorder · AudioPlayerService · push-to-talk button
-│  └─ settings/              # workspace · usage · theme · transport · voice · model · chat defaults · memory · admin · account
+│  └─ settings/              # workspace · usage · theme · language · transport · voice · model · chat defaults · memory
+│                            # · security · offline · admin · about (version, legal, licences) · account
 └─ shared/
    ├─ home_shell.dart        # ShellRoute host: drawer (mobile) / sidebar (wide) + landing route
    ├─ sidebar.dart           # Workspace switcher, session list, search, new chat (assistant picker), links, usage, profile
+   ├─ offline_banner.dart    # "You're offline" / queued / failed sends banner above the shell
    └─ highlight_text.dart    # `<mark>` highlight parser + widget
 ```
+
+Outside `lib/`: `l10n.yaml` (gen-l10n configuration), `test/helpers/test_app.dart` (`localizedApp(...)` wraps a widget in the app's localization delegates, a memory store and a manual connectivity service), `android/fastlane` + `ios/fastlane` (release lanes), `fastlane/README.md` (secrets and setup) and `.github/workflows/release.yml`.
 
 ---
 
@@ -428,7 +495,7 @@ dart run flutter_launcher_icons
 
 ## ✅ Continuous integration
 
-`.github/workflows/ci.yml` runs `flutter pub get`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser (incl. `id:` lines), the stream-event parser (including `approval_required`, structured citations, `role: "tool"` rows, `generation_id`, `parent_id` / `siblings`, `memories_used`, `feedback` and `quota_exceeded` frames), the chat reducer via a fake repository (approval flow, per-turn overrides, sibling switching, the edit flow, resume-after-drop, attaching to a running generation, background sends, the quota banner state, feedback), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame and `org_id`), widget smoke tests (approval card, tool chips, citations, sibling switcher, feedback buttons, inline editor, quota banner, attachment chips / grid, artifact cards, the composer's attach menu and voice button, push-to-talk with a fake recorder, the grouped tool picker), the Phase 4 reducer paths (sends with `attachment_ids`, `artifact` / `audio_chunk` / `audio_done` frames, voice turns, playback, `attachToGeneration` for push payloads), the push router / registrar, and end-to-end checks of the API client and every repository — models, tools (with `source`), collections, documents, approvals, search, orgs + members (with the `X-Org-Id` header), usage and the `quota_exceeded` 429, assistants, feedback, memories, siblings / branch, generation event replay with `after=`, background sends and the `Idempotency-Key` header, attachments (multipart upload, content bytes and the `307` to presigned storage without the bearer), voice (`/audio/*`, the multipart voice turn), MCP servers, export bytes + headers, share links and devices — against loopback HTTP servers.
+`.github/workflows/ci.yml` runs `flutter pub get`, `flutter gen-l10n`, `flutter analyze --fatal-infos --fatal-warnings` and `flutter test` on every push and pull request (Flutter stable via `subosito/flutter-action`). The test suite covers the SSE frame parser (incl. `id:` lines), the stream-event parser (including `approval_required`, structured citations, `role: "tool"` rows, `generation_id`, `parent_id` / `siblings`, `memories_used`, `feedback` and `quota_exceeded` frames), the chat reducer via a fake repository (approval flow, per-turn overrides, sibling switching, the edit flow, resume-after-drop, attaching to a running generation, background sends, the quota banner state, feedback), the token refresher, the `<mark>` highlight parser, the WebSocket protocol (incl. the `approval` frame and `org_id`), widget smoke tests (approval card, tool chips, citations, sibling switcher, feedback buttons, inline editor, quota banner, attachment chips / grid, artifact cards, the composer's attach menu and voice button, push-to-talk with a fake recorder, the grouped tool picker), the Phase 4 reducer paths (sends with `attachment_ids`, `artifact` / `audio_chunk` / `audio_done` frames, voice turns, playback, `attachToGeneration` for push payloads), the push router / registrar, and end-to-end checks of the API client and every repository — models, tools (with `source`), collections, documents, approvals, search, orgs + members (with the `X-Org-Id` header), usage and the `quota_exceeded` 429, assistants, feedback, memories, siblings / branch, generation event replay with `after=`, background sends and the `Idempotency-Key` header, attachments (multipart upload, content bytes and the `307` to presigned storage without the bearer), voice (`/audio/*`, the multipart voice turn), MCP servers, export bytes + headers, share links and devices — against loopback HTTP servers. Phase 4b adds the ARB parity / placeholder check and the generated locales, the `LocalStore` implementations (incl. corrupt files and the memory fallback), the chat cache, the send queue (offline wait, backoff, parked sends, persistence across restarts), the sync coordinator, the share-intake router, the app lock, the offline-first reducer paths (cache-first open, pagination, queued / parked / replayed sends, reconnect resync) and RTL + keyboard widget tests. 300 tests in all.
 
 ---
 
@@ -442,6 +509,14 @@ flutter build macos  --dart-define=API_BASE_URL=https://api.yourhost.com/api/v1 
 ```
 
 Use an `https://` backend URL for release builds so the connection isn't blocked by platform transport-security policies.
+
+### Release pipeline
+
+- **Version** — `pubspec.yaml` is at `1.4.0+5`; keep `AppInfo.fallback` (`core/app_info.dart`) in step when bumping it.
+- **Android signing** — `android/app/build.gradle.kts` reads a git-ignored `android/key.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); without it the release build falls back to the debug key so local builds still work.
+- **fastlane** — `cd android && bundle exec fastlane internal` builds the AAB and uploads it to the Play **internal testing** track; `cd ios && bundle exec fastlane beta` builds the IPA and uploads it to **TestFlight** through an App Store Connect API key. Both have a plain `build` lane. Required environment variables are listed in [`fastlane/README.md`](fastlane/README.md).
+- **GitHub Actions** — `.github/workflows/release.yml` runs on every `v*` tag (and manually): it builds the Android AAB + APK (signed when the keystore secrets exist, debug-signed otherwise), an unsigned iOS archive and the web bundle, uploads all of them as workflow artifacts, and runs the fastlane lanes only when the matching secrets are configured. `ci.yml` stays the analyze + test gate.
+- **iOS share extension** — see *Share intake* above; it is a one-time Xcode setup that is not part of the repository.
 
 ---
 

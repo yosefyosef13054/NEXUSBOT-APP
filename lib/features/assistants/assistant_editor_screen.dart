@@ -7,6 +7,7 @@ import '../../core/breakpoints.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import '../../shared/home_shell.dart';
 import '../auth/auth_providers.dart';
 import '../collections/collection_model.dart';
@@ -36,8 +37,6 @@ class AssistantEditorScreen extends ConsumerStatefulWidget {
 
 class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
   static const _modelDefault = '\u0000default';
-  static const readOnlyMessage =
-      'Only the assistant\'s creator or a workspace admin can change it.';
 
   final _name = TextEditingController();
   final _description = TextEditingController();
@@ -142,8 +141,9 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
       );
 
   Future<void> _save() async {
+    final l10n = context.l10n;
     if (_name.text.trim().isEmpty) {
-      setState(() => _nameError = 'Give the assistant a name');
+      setState(() => _nameError = l10n.assistantNameRequired);
       return;
     }
     setState(() {
@@ -161,18 +161,18 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
       }
       ref.invalidate(assistantListProvider);
       if (!mounted) return;
-      _toast(id == null ? '“${draft.name}” created' : 'Assistant saved');
+      _toast(id == null ? l10n.assistantCreated(draft.name) : l10n.assistantSaved);
       context.go(AppRoutes.assistants);
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.isForbidden) {
         setState(() => _readOnly = true);
-        _toast(readOnlyMessage);
+        _toast(l10n.assistantReadOnlyMessage);
       } else {
-        _toast(e.userMessage);
+        _toast(context.describeError(e));
       }
     } catch (e) {
-      _toast(errorText(e));
+      if (mounted) _toast(context.describeError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -181,17 +181,21 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
   Future<void> _delete() async {
     final a = _loaded;
     if (a == null) return;
+    final l10n = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete assistant?'),
-        content: Text('“${a.name}” will be removed. Chats that used it keep their history.'),
+        title: Text(l10n.assistantDeleteTitle),
+        content: Text(l10n.assistantDeleteBody(a.name)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: NexusColors.crimson),
-            child: const Text('Delete'),
+            child: Text(l10n.commonDelete),
           ),
         ],
       ),
@@ -206,14 +210,15 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.isForbidden) setState(() => _readOnly = true);
-      _toast(e.isForbidden ? readOnlyMessage : e.userMessage);
+      _toast(e.isForbidden ? l10n.assistantReadOnlyMessage : context.describeError(e));
     } catch (e) {
-      _toast(errorText(e));
+      if (mounted) _toast(context.describeError(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final catalog = ref.watch(modelCatalogProvider).valueOrNull ?? ModelCatalog.empty;
     final tools = ref.watch(toolCatalogProvider).valueOrNull ?? const <ToolInfo>[];
@@ -232,9 +237,13 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
     } else if (_loadError != null) {
       body = EmptyState(
         icon: Icons.cloud_off_rounded,
-        title: 'Could not load the assistant',
-        subtitle: errorText(_loadError!),
-        action: NexusGhostButton(label: 'Retry', icon: Icons.refresh_rounded, onPressed: _load),
+        title: l10n.assistantLoadFailed,
+        subtitle: context.describeError(_loadError!),
+        action: NexusGhostButton(
+          label: l10n.commonRetry,
+          icon: Icons.refresh_rounded,
+          onPressed: _load,
+        ),
       );
     } else {
       body = ListView(
@@ -258,7 +267,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                   const SizedBox(width: NexusSpacing.sm),
                   Expanded(
                     child: Text(
-                      'Read-only — $readOnlyMessage',
+                      l10n.assistantReadOnlyBanner(l10n.assistantReadOnlyMessage),
                       style: TextStyle(color: t.textPrimary, fontSize: 12.5),
                     ),
                   ),
@@ -288,7 +297,10 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                       enabled: enabled,
                       autofocus: _isNew,
                       textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(hintText: 'Name', errorText: _nameError),
+                      decoration: InputDecoration(
+                        hintText: l10n.assistantNameHint,
+                        errorText: _nameError,
+                      ),
                       onChanged: (_) {
                         if (_nameError != null) setState(() => _nameError = null);
                       },
@@ -302,7 +314,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                 enabled: enabled,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(hintText: 'Description (shown in the picker)'),
+                decoration: InputDecoration(hintText: l10n.assistantDescriptionHint),
               ),
               const SizedBox(height: NexusSpacing.md),
               TextField(
@@ -310,27 +322,25 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                 enabled: enabled,
                 minLines: 4,
                 maxLines: 12,
-                decoration: const InputDecoration(
-                  hintText: 'System prompt — who the assistant is and how it should answer',
-                ),
+                decoration: InputDecoration(hintText: l10n.assistantPromptHint),
               ),
             ],
           ),
           const SizedBox(height: NexusSpacing.lg),
           _Card(
-            title: 'MODEL',
+            title: l10n.sectionModel,
             children: [
               InputDecorator(
-                decoration: const InputDecoration(labelText: 'Model'),
+                decoration: InputDecoration(labelText: l10n.assistantModelLabel),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
                     isDense: true,
                     value: catalog.contains(_model) ? _model : _modelDefault,
                     items: [
-                      const DropdownMenuItem(
+                      DropdownMenuItem(
                         value: _modelDefault,
-                        child: Text('Workspace default'),
+                        child: Text(l10n.assistantWorkspaceDefault),
                       ),
                       for (final m in catalog.items)
                         DropdownMenuItem(value: m.id, child: Text(m.displayName)),
@@ -347,11 +357,11 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                 onChanged: enabled ? (v) => setState(() => _customTemperature = v) : null,
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Custom temperature', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.assistantCustomTemperature, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
                   _customTemperature
                       ? _temperature.toStringAsFixed(1)
-                      : 'Model default — lower is more focused, higher more creative',
+                      : l10n.assistantTemperatureDefault,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -369,16 +379,16 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
           ),
           const SizedBox(height: NexusSpacing.lg),
           _Card(
-            title: 'KNOWLEDGE',
+            title: l10n.sectionKnowledge,
             children: [
               SwitchListTile(
                 value: _useRag,
                 onChanged: enabled ? (v) => setState(() => _useRag = v) : null,
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Use documents (RAG)', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.assistantUseDocuments, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                  'Ground answers in the workspace\'s documents.',
+                  l10n.assistantUseDocumentsSubtitle,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -386,7 +396,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: NexusSpacing.sm, bottom: 4),
                   child: Text(
-                    'Collections (none selected = all documents)',
+                    l10n.assistantCollectionsLabel,
                     style: TextStyle(
                       color: t.textSecondary,
                       fontSize: 12,
@@ -417,16 +427,16 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
           ),
           const SizedBox(height: NexusSpacing.lg),
           _Card(
-            title: 'TOOLS',
+            title: l10n.sectionTools,
             children: [
               SwitchListTile(
                 value: _useTools,
                 onChanged: enabled ? (v) => setState(() => _useTools = v) : null,
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Use tools', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.assistantUseTools, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                  'Let the agent call tools; tools with a shield ask for approval.',
+                  l10n.assistantUseToolsSubtitle,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -435,7 +445,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: NexusSpacing.sm),
                     child: Text(
-                      'No tools are configured on this server.',
+                      l10n.assistantNoTools,
                       style: TextStyle(color: t.textMuted, fontSize: 12),
                     ),
                   )
@@ -478,16 +488,16 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
           ),
           const SizedBox(height: NexusSpacing.lg),
           _Card(
-            title: 'BEHAVIOUR',
+            title: l10n.sectionBehaviour,
             children: [
               SwitchListTile(
                 value: _memoryEnabled,
                 onChanged: enabled ? (v) => setState(() => _memoryEnabled = v) : null,
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Use memory', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.assistantUseMemory, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                  'Remember facts and preferences across chats (also needs your account setting).',
+                  l10n.assistantUseMemorySubtitle,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -496,9 +506,9 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
                 onChanged: enabled ? (v) => setState(() => _isDefault = v) : null,
                 activeTrackColor: NexusColors.crimson,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Default assistant', style: TextStyle(fontSize: 14)),
+                title: Text(l10n.assistantDefault, style: const TextStyle(fontSize: 14)),
                 subtitle: Text(
-                  'Preselected in the new-chat picker for everyone in the workspace.',
+                  l10n.assistantDefaultSubtitle,
                   style: TextStyle(color: t.textMuted, fontSize: 12),
                 ),
               ),
@@ -507,7 +517,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
           const SizedBox(height: NexusSpacing.xl),
           if (!_readOnly)
             NexusButton(
-              label: _isNew ? 'Create assistant' : 'Save changes',
+              label: _isNew ? l10n.assistantCreateButton : l10n.assistantSaveChanges,
               icon: Icons.check_rounded,
               loading: _saving,
               onPressed: enabled ? _save : null,
@@ -522,7 +532,7 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
       appBar: AppBar(
         leading: context.isMobile ? const MenuButton() : null,
         title: Text(
-          _isNew ? 'New assistant' : (_loaded?.name ?? 'Assistant'),
+          _isNew ? l10n.assistantNewTitle : (_loaded?.name ?? l10n.chatAssistantFallback),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: t.textPrimary),
@@ -530,11 +540,11 @@ class _AssistantEditorScreenState extends ConsumerState<AssistantEditorScreen> {
         actions: [
           TextButton(
             onPressed: () => context.go(AppRoutes.assistants),
-            child: const Text('Close'),
+            child: Text(l10n.commonClose),
           ),
           if (!_isNew && !_readOnly && _loaded != null)
             IconButton(
-              tooltip: 'Delete',
+              tooltip: l10n.assistantDeleteTooltip,
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: _saving ? null : _delete,
             ),
@@ -561,7 +571,7 @@ class _Card extends StatelessWidget {
       children: [
         if (title != null)
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: NexusSpacing.sm),
+            padding: const EdgeInsetsDirectional.only(start: 4, bottom: NexusSpacing.sm),
             child: Text(
               title!,
               style: TextStyle(

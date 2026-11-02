@@ -40,6 +40,17 @@ class User {
   bool get isServerAdmin => role == 'admin';
 
   String get displayName => fullName?.isNotEmpty == true ? fullName! : email.split('@').first;
+
+  /// The server shape (`UserRead`), for the offline profile cache.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'email': email,
+        'full_name': fullName,
+        'role': role,
+        'default_model': defaultModel,
+        'personal_org_id': personalOrgId,
+        'memory_enabled': memoryEnabled,
+      };
 }
 
 class TokenPair {

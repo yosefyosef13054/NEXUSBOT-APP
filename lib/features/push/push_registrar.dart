@@ -3,6 +3,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/app_info.dart';
 import '../../core/router.dart';
 import '../auth/auth_models.dart';
 import '../auth/auth_providers.dart';
@@ -21,7 +22,7 @@ class PushRegistrar {
   }) : locale = locale ?? _systemLocale();
 
   /// `pubspec.yaml` version; reported as `app_version`.
-  static const defaultAppVersion = '1.0.0';
+  static const defaultAppVersion = AppInfo.fallbackVersion;
 
   final PushService service;
   final Future<DevicesRepository> Function() repository;

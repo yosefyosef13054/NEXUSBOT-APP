@@ -86,6 +86,28 @@ class Assistant {
     return org?.canManage == true;
   }
 
+  /// The server shape (`AssistantRead`), so a cached assistant round-trips
+  /// through [Assistant.fromJson].
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'org_id': orgId,
+        'name': name,
+        'description': description,
+        'avatar': avatar,
+        'system_prompt': systemPrompt,
+        'model': model,
+        'tool_names': toolNames,
+        'collection_ids': collectionIds,
+        'use_rag': useRag,
+        'use_tools': useTools,
+        'temperature': temperature,
+        'memory_enabled': memoryEnabled,
+        'is_default': isDefault,
+        'created_by': createdBy,
+        'created_at': createdAt?.toIso8601String(),
+        'updated_at': updatedAt?.toIso8601String(),
+      };
+
   AssistantDraft toDraft() => AssistantDraft(
         name: name,
         description: description,

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/api_exception.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
+import '../../l10n/l10n.dart';
 import '../documents/document_model.dart';
 import '../documents/documents_repository.dart';
 import 'chat_models.dart';
@@ -55,6 +55,7 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final t = context.tokens;
     final c = widget.citation;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
@@ -135,8 +136,8 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
                     if (snap.hasError) {
                       return _Message(
                         icon: Icons.cloud_off_rounded,
-                        text: errorText(snap.error!),
-                        action: TextButton(onPressed: _retry, child: const Text('Retry')),
+                        text: context.describeError(snap.error!),
+                        action: TextButton(onPressed: _retry, child: Text(l10n.commonRetry)),
                         fallback: c.excerpt,
                       );
                     }
@@ -150,7 +151,7 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
                             Padding(
                               padding: const EdgeInsets.only(bottom: NexusSpacing.sm),
                               child: Text(
-                                'Showing the excerpt — the full chunk is not available.',
+                                l10n.citationExcerptOnly,
                                 style: TextStyle(color: t.textMuted, fontSize: 11.5),
                               ),
                             ),
@@ -163,7 +164,7 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
                               border: Border.all(color: t.border),
                             ),
                             child: SelectableText(
-                              text.isEmpty ? '(empty chunk)' : text,
+                              text.isEmpty ? l10n.citationEmptyChunk : text,
                               style: TextStyle(color: t.textPrimary, fontSize: 13.5, height: 1.55),
                             ),
                           ),
@@ -171,10 +172,10 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
                             const SizedBox(height: NexusSpacing.sm),
                             Text(
                               [
-                                'Chunk #${chunk.chunkIndex}',
-                                if (chunk.tokens != null) '${chunk.tokens} tokens',
+                                l10n.citationChunkIndex(chunk.chunkIndex),
+                                if (chunk.tokens != null) l10n.citationTokens(chunk.tokens!),
                                 if (chunk.startIndex != null && chunk.endIndex != null)
-                                  'chars ${chunk.startIndex}–${chunk.endIndex}',
+                                  l10n.citationChars(chunk.startIndex!, chunk.endIndex!),
                               ].join(' · '),
                               style: TextStyle(color: t.textMuted, fontSize: 11),
                             ),
@@ -190,7 +191,7 @@ class _CitationSheetState extends ConsumerState<CitationSheet> {
                 children: [
                   const Spacer(),
                   NexusGhostButton(
-                    label: 'Open in Documents',
+                    label: l10n.citationOpenDocuments,
                     icon: Icons.menu_book_rounded,
                     onPressed: _openDocuments,
                   ),
@@ -211,6 +212,8 @@ class _ScoreBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final pct = (score * 100).toStringAsFixed(0);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -219,9 +222,7 @@ class _ScoreBadge extends StatelessWidget {
         border: Border.all(color: NexusColors.crimson.withValues(alpha: 0.5)),
       ),
       child: Text(
-        match == null
-            ? '${(score * 100).toStringAsFixed(0)}% match'
-            : '${(score * 100).toStringAsFixed(0)}% · $match',
+        match == null ? l10n.citationMatch(pct) : l10n.citationMatchKind(pct, match!),
         style: const TextStyle(
           color: NexusColors.crimson,
           fontSize: 11,
@@ -257,7 +258,7 @@ class _Message extends StatelessWidget {
               const SizedBox(width: NexusSpacing.sm),
               Expanded(
                 child: Text(
-                  'Could not load the chunk: $text',
+                  context.l10n.citationLoadFailed(text),
                   style: TextStyle(color: t.textSecondary, fontSize: 12.5),
                 ),
               ),
